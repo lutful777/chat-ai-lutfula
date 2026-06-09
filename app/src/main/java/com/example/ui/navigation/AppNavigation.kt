@@ -24,7 +24,7 @@ import com.example.ui.chat.ChatScreen
 import com.example.ui.chat.ChatViewModel
 import com.example.ui.settings.SettingsScreen
 import com.example.ui.settings.SettingsViewModel
-import com.example.data.EmailMessage
+import com.example.data.GraphEmail
 
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Welcome : Screen("welcome", "Welcome", Icons.AutoMirrored.Filled.Chat)

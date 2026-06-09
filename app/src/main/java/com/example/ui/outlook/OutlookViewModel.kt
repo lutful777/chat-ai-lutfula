@@ -3,7 +3,7 @@ package com.example.ui.outlook
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.data.EmailMessage
+import com.example.data.GraphEmail
 import com.example.data.MicrosoftGraphRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 data class OutlookUiState(
-    val emails: List<EmailMessage> = emptyList(),
+    val emails: List<GraphEmail> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null
 )

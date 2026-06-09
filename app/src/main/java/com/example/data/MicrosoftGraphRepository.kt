@@ -7,30 +7,30 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import retrofit2.Retrofit
-import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.http.Url
 
-data class EmailMessage(
+data class GraphEmail(
     val id: String,
     val subject: String?,
     val bodyPreview: String?,
     val receivedDateTime: String?,
-    val sender: EmailSender?
+    val sender: GraphEmailSender?
 )
 
-data class EmailSender(
-    val emailAddress: EmailAddress?
+data class GraphEmailSender(
+    val emailAddress: GraphEmailAddress?
 )
 
-data class EmailAddress(
+data class GraphEmailAddress(
     val address: String?,
     val name: String?
 )
 
 data class GraphEmailsResponse(
-    val value: List<EmailMessage>
+    val value: List<GraphEmail>
 )
 
 interface MicrosoftGraphApi {
@@ -49,8 +49,8 @@ interface MicrosoftGraphApi {
 }
 
 class MicrosoftGraphRepository(private val authService: MicrosoftAuthService) {
-    private val _emails = MutableStateFlow<List<EmailMessage>>(emptyList())
-    val emails: StateFlow<List<EmailMessage>> = _emails.asStateFlow()
+    private val _emails = MutableStateFlow<List<GraphEmail>>(emptyList())
+    val emails: StateFlow<List<GraphEmail>> = _emails.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -76,7 +76,7 @@ class MicrosoftGraphRepository(private val authService: MicrosoftAuthService) {
         Retrofit.Builder()
             .baseUrl("https://graph.microsoft.com/")
             .client(client)
-            .addConverterFactory(MoshiConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(MicrosoftGraphApi::class.java)
     }

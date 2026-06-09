@@ -18,7 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import com.example.data.EmailMessage
+import com.example.data.GraphEmail
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -39,7 +39,7 @@ import java.util.TimeZone
 fun OutlookScreen(
     viewModel: OutlookViewModel,
     onNavigateBack: () -> Unit = {},
-    onAskAi: (EmailMessage) -> Unit = {}
+    onAskAi: (GraphEmail) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
