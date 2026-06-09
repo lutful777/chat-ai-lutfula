@@ -10,7 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -67,7 +67,7 @@ fun SettingsScreen(
                 title = { Text("") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -193,6 +193,9 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            Text("Text & Search Settings", fontSize = 18.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Input Fields
             OutlinedTextField(
                 value = uiState.baseUrl,
@@ -290,7 +293,7 @@ fun SettingsScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                 contentPadding = PaddingValues()
             ) {
-                Text("Save Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("Save Text Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -326,15 +329,219 @@ fun SettingsScreen(
                     Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = SuccessGreen)
                 }
 
-                LaunchedEffect(Unit) {
-                    kotlinx.coroutines.delay(3000)
-                    viewModel.resetSaveState()
+                LaunchedEffect(uiState.isSaved) {
+                    if (uiState.isSaved) {
+                        kotlinx.coroutines.delay(3000)
+                        viewModel.resetSaveState()
+                    }
                 }
             }
             
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // Media Generation Settings
+            Text("Media Generation Settings", fontSize = 24.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Configure Create Photo, Edit Photo, and Photo to Video APIs", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.Start))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // A. Create Photo Settings
+            MediaSettingsCard("Create Photo Settings", 
+                provider = uiState.createPhotoProvider, onProviderChange = { viewModel.updateCreatePhotoProvider(it) },
+                apiKey = uiState.createPhotoApiKey, onApiKeyChange = { viewModel.updateCreatePhotoApiKey(it) },
+                baseUrl = uiState.createPhotoBaseUrl, onBaseUrlChange = { viewModel.updateCreatePhotoBaseUrl(it) },
+                endpoint = uiState.createPhotoEndpoint, onEndpointChange = { viewModel.updateCreatePhotoEndpoint(it) },
+                model = uiState.createPhotoModel, onModelChange = { viewModel.updateCreatePhotoModel(it) },
+                format = uiState.createPhotoFormat, onFormatChange = { viewModel.updateCreatePhotoFormat(it) },
+                onSave = { viewModel.saveCreatePhotoSettings() },
+                isSaved = uiState.isCreatePhotoSaved,
+                passwordVisible = passwordVisible, onPasswordVisibleChange = { passwordVisible = it }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // B. Edit Photo Settings
+            MediaSettingsCard("Edit Photo Settings", 
+                provider = uiState.editPhotoProvider, onProviderChange = { viewModel.updateEditPhotoProvider(it) },
+                apiKey = uiState.editPhotoApiKey, onApiKeyChange = { viewModel.updateEditPhotoApiKey(it) },
+                baseUrl = uiState.editPhotoBaseUrl, onBaseUrlChange = { viewModel.updateEditPhotoBaseUrl(it) },
+                endpoint = uiState.editPhotoEndpoint, onEndpointChange = { viewModel.updateEditPhotoEndpoint(it) },
+                model = uiState.editPhotoModel, onModelChange = { viewModel.updateEditPhotoModel(it) },
+                format = uiState.editPhotoFormat, onFormatChange = { viewModel.updateEditPhotoFormat(it) },
+                imageFormat = uiState.editPhotoImageFormat, onImageFormatChange = { viewModel.updateEditPhotoImageFormat(it) },
+                onSave = { viewModel.saveEditPhotoSettings() },
+                isSaved = uiState.isEditPhotoSaved,
+                passwordVisible = passwordVisible, onPasswordVisibleChange = { passwordVisible = it }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // C. Photo to Video Settings
+            MediaSettingsCard("Photo to Video Settings", 
+                provider = uiState.photoVideoProvider, onProviderChange = { viewModel.updatePhotoVideoProvider(it) },
+                apiKey = uiState.photoVideoApiKey, onApiKeyChange = { viewModel.updatePhotoVideoApiKey(it) },
+                baseUrl = uiState.photoVideoBaseUrl, onBaseUrlChange = { viewModel.updatePhotoVideoBaseUrl(it) },
+                endpoint = uiState.photoVideoCreateEndpoint, onEndpointChange = { viewModel.updatePhotoVideoCreateEndpoint(it) },
+                statusEndpoint = uiState.photoVideoStatusEndpoint, onStatusEndpointChange = { viewModel.updatePhotoVideoStatusEndpoint(it) },
+                resultEndpoint = uiState.photoVideoResultEndpoint, onResultEndpointChange = { viewModel.updatePhotoVideoResultEndpoint(it) },
+                model = uiState.photoVideoModel, onModelChange = { viewModel.updatePhotoVideoModel(it) },
+                format = uiState.photoVideoFormat, onFormatChange = { viewModel.updatePhotoVideoFormat(it) },
+                imageFormat = uiState.photoVideoImageFormat, onImageFormatChange = { viewModel.updatePhotoVideoImageFormat(it) },
+                duration = uiState.photoVideoDuration, onDurationChange = { viewModel.updatePhotoVideoDuration(it) },
+                onSave = { viewModel.savePhotoVideoSettings() },
+                isSaved = uiState.isPhotoVideoSaved,
+                passwordVisible = passwordVisible, onPasswordVisibleChange = { passwordVisible = it }
+            )
+
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 data class ProviderData(val name: String, val subtitle: String, val icon: ImageVector)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MediaSettingsCard(
+    title: String,
+    provider: String, onProviderChange: (String) -> Unit,
+    apiKey: String, onApiKeyChange: (String) -> Unit,
+    baseUrl: String, onBaseUrlChange: (String) -> Unit,
+    endpoint: String, onEndpointChange: (String) -> Unit,
+    statusEndpoint: String? = null, onStatusEndpointChange: ((String) -> Unit)? = null,
+    resultEndpoint: String? = null, onResultEndpointChange: ((String) -> Unit)? = null,
+    model: String, onModelChange: (String) -> Unit,
+    format: String, onFormatChange: (String) -> Unit,
+    imageFormat: String? = null, onImageFormatChange: ((String) -> Unit)? = null,
+    duration: String? = null, onDurationChange: ((String) -> Unit)? = null,
+    onSave: () -> Unit,
+    isSaved: Boolean,
+    passwordVisible: Boolean, onPasswordVisibleChange: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .border(1.dp, OutlineDark, RoundedCornerShape(16.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(title, fontSize = 16.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Provider
+            OutlinedTextField(
+                value = provider, onValueChange = onProviderChange, label = { Text("Provider Name") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // BaseModel
+            OutlinedTextField(
+                value = baseUrl, onValueChange = onBaseUrlChange, label = { Text("Base URL") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // API Key
+            OutlinedTextField(
+                value = apiKey, onValueChange = onApiKeyChange, label = { Text("API Key") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp),
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    val image = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
+                    IconButton(onClick = { onPasswordVisibleChange(!passwordVisible) }) {
+                        Icon(imageVector = image, contentDescription = "Toggle password", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Endpoints
+            OutlinedTextField(
+                value = endpoint, onValueChange = onEndpointChange, label = { Text("Endpoint Path") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            if (statusEndpoint != null && onStatusEndpointChange != null) {
+                OutlinedTextField(
+                    value = statusEndpoint, onValueChange = onStatusEndpointChange, label = { Text("Status Endpoint Path") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            
+            if (resultEndpoint != null && onResultEndpointChange != null) {
+                OutlinedTextField(
+                    value = resultEndpoint, onValueChange = onResultEndpointChange, label = { Text("Result Endpoint Path") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Model
+            OutlinedTextField(
+                value = model, onValueChange = onModelChange, label = { Text("Model Name") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Format Options
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Request Format:", color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Row {
+                    val formats = listOf("JSON", "multipart")
+                    formats.forEach { option ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onFormatChange(option) }) {
+                            RadioButton(selected = format == option, onClick = { onFormatChange(option) })
+                            Text(text = option, color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Image Format (If present)
+            if (imageFormat != null && onImageFormatChange != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Image Input Format:", color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                }
+                Row(modifier = Modifier.padding(start = 16.dp)) {
+                    val formats = listOf("base64", "multipart", "url")
+                    formats.forEach { option ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onImageFormatChange(option) }.padding(end = 8.dp)) {
+                            RadioButton(selected = imageFormat == option, onClick = { onImageFormatChange(option) }, modifier = Modifier.size(24.dp))
+                            Text(text = option, color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Duration
+            if (duration != null && onDurationChange != null) {
+                OutlinedTextField(
+                    value = duration, onValueChange = onDurationChange, label = { Text("Duration (seconds)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = onSave, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)) {
+                Text(if (isSaved) "Saved!" else "Save", color = Color.White)
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            OutlinedButton(
+                onClick = { /* Simulated */ },
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, OutlineDark)
+            ) {
+                Text("Test Connection", color = Color.White)
+            }
+        }
+    }
+}

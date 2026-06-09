@@ -102,7 +102,7 @@ class ChatViewModel(
             languageIdentifier.identifyLanguage(context)
                 .addOnSuccessListener { languageCode ->
                     if (languageCode != "und" && languageCode != "en") {
-                        val languageName = java.util.Locale(languageCode).displayLanguage
+                        val languageName = java.util.Locale.forLanguageTag(languageCode).displayLanguage
                         _uiState.update { it.copy(suggestedTranslationAction = "Translate from $languageName to English") }
                     }
                 }
@@ -120,6 +120,21 @@ class ChatViewModel(
                 chatRepository.deleteSession(sessionId)
             }
             _uiState.update { it.copy(error = null, currentSessionId = null, messages = emptyList()) }
+        }
+    }
+
+    private fun shouldUseRealtimeSearch(messageText: String): Boolean {
+        val keywords = listOf(
+            "cari", "search", "carikan", "cek", "berita terbaru", "terbaru", 
+            "update terbaru", "hari ini", "sekarang", "live", "real time", 
+            "realtime", "viral", "trending", "sedang viral", "sosial media", 
+            "twitter", "x", "tiktok", "instagram", "youtube", "harga", "price", 
+            "kurs", "btc", "bitcoin", "eth", "ethereum", "crypto", "saham", 
+            "ihsg", "usd", "idr"
+        )
+        val textLower = messageText.lowercase()
+        return keywords.any { keyword -> 
+            Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(textLower)
         }
     }
 
@@ -164,41 +179,45 @@ class ChatViewModel(
                 var searchContext = ""
                 var searchLinks = ""
                 
-                if (firecrawlKey.isBlank()) {
-                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search API key is missing. Answering without live search."))
-                } else {
-                    try {
-                        val searchAdapter = moshi.adapter(com.example.network.FirecrawlSearchRequest::class.java)
-                        val firecrawlRequest = com.example.network.FirecrawlSearchRequest(query = messageText)
-                        val firecrawlBody = searchAdapter.toJson(firecrawlRequest).toRequestBody("application/json; charset=utf-8".toMediaType())
-                        
-                        val fRequest = Request.Builder()
-                            .url("https://api.firecrawl.dev/v1/search")
-                            .addHeader("Authorization", "Bearer $firecrawlKey")
-                            .addHeader("Content-Type", "application/json")
-                            .post(firecrawlBody)
-                            .build()
+                val useSearch = shouldUseRealtimeSearch(messageText)
+                
+                if (useSearch) {
+                    if (firecrawlKey.isBlank()) {
+                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search API key is missing. Answering without live search."))
+                    } else {
+                        try {
+                            val searchAdapter = moshi.adapter(com.example.network.FirecrawlSearchRequest::class.java)
+                            val firecrawlRequest = com.example.network.FirecrawlSearchRequest(query = messageText)
+                            val firecrawlBody = searchAdapter.toJson(firecrawlRequest).toRequestBody("application/json; charset=utf-8".toMediaType())
                             
-                        val fResponse = okHttpClient.newCall(fRequest).execute()
-                        val fResponseStr = fResponse.body?.string()
-                        
-                        if (fResponse.isSuccessful && fResponseStr != null) {
-                            val fResponseAdapter = moshi.adapter(com.example.network.FirecrawlSearchResponse::class.java)
-                            val fResult = fResponseAdapter.fromJson(fResponseStr)
+                            val fRequest = Request.Builder()
+                                .url("https://api.firecrawl.dev/v1/search")
+                                .addHeader("Authorization", "Bearer $firecrawlKey")
+                                .addHeader("Content-Type", "application/json")
+                                .post(firecrawlBody)
+                                .build()
+                                
+                            val fResponse = okHttpClient.newCall(fRequest).execute()
+                            val fResponseStr = fResponse.body?.string()
                             
-                            val results = fResult?.data
-                            if (!results.isNullOrEmpty()) {
-                                val topResults = results.take(3)
-                                searchContext = "Use the following real-time search results to answer the user's query:\n\n" +
-                                        topResults.joinToString("\n\n") { "- Title: ${it.title}\n  Description: ${it.description}\n  URL: ${it.url}" }
-                                        
-                                searchLinks = "\n\nSources:\n" + topResults.joinToString("\n") { "• ${it.title ?: "Link"}\n  ${it.url}" }
+                            if (fResponse.isSuccessful && fResponseStr != null) {
+                                val fResponseAdapter = moshi.adapter(com.example.network.FirecrawlSearchResponse::class.java)
+                                val fResult = fResponseAdapter.fromJson(fResponseStr)
+                                
+                                val results = fResult?.data
+                                if (!results.isNullOrEmpty()) {
+                                    val topResults = results.take(3)
+                                    searchContext = "Use the following real-time search results to answer the user's query:\n\n" +
+                                            topResults.joinToString("\n\n") { "- Title: ${it.title}\n  Description: ${it.description}\n  URL: ${it.url}" }
+                                            
+                                    searchLinks = "\n\nSources:\n" + topResults.joinToString("\n") { "• ${it.title ?: "Link"}\n  ${it.url}" }
+                                }
+                            } else {
+                                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search failed, answering without live search."))
                             }
-                        } else {
+                        } catch (e: Exception) {
                             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search failed, answering without live search."))
                         }
-                    } catch (e: Exception) {
-                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search failed, answering without live search."))
                     }
                 }
 

@@ -39,7 +39,7 @@ object AppContainer {
                 context.applicationContext,
                 AppDatabase::class.java,
                 "app_database"
-            ).fallbackToDestructiveMigration()
+            ).fallbackToDestructiveMigration(dropAllTables = true)
             .build()
         }
         return _database!!

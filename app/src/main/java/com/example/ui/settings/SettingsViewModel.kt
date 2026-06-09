@@ -20,7 +20,41 @@ data class SettingsUiState(
     val modelName: String = "",
     val firecrawlApiKey: String = "",
     val isSaved: Boolean = false,
-    val microsoftAccount: IAccount? = null
+    val microsoftAccount: IAccount? = null,
+    
+    // Create Photo
+    val createPhotoProvider: String = "",
+    val createPhotoApiKey: String = "",
+    val createPhotoBaseUrl: String = "",
+    val createPhotoEndpoint: String = "",
+    val createPhotoModel: String = "",
+    val createPhotoFormat: String = "JSON",
+
+    // Edit Photo
+    val editPhotoProvider: String = "",
+    val editPhotoApiKey: String = "",
+    val editPhotoBaseUrl: String = "",
+    val editPhotoEndpoint: String = "",
+    val editPhotoModel: String = "",
+    val editPhotoFormat: String = "JSON",
+    val editPhotoImageFormat: String = "base64",
+
+    // Photo to Video
+    val photoVideoProvider: String = "",
+    val photoVideoApiKey: String = "",
+    val photoVideoBaseUrl: String = "",
+    val photoVideoCreateEndpoint: String = "",
+    val photoVideoStatusEndpoint: String = "",
+    val photoVideoResultEndpoint: String = "",
+    val photoVideoModel: String = "",
+    val photoVideoFormat: String = "JSON",
+    val photoVideoImageFormat: String = "base64",
+    val photoVideoDuration: String = "5",
+
+    // Save states
+    val isCreatePhotoSaved: Boolean = false,
+    val isEditPhotoSaved: Boolean = false,
+    val isPhotoVideoSaved: Boolean = false
 )
 
 class SettingsViewModel(
@@ -46,32 +80,49 @@ class SettingsViewModel(
             val key = settingsRepository.apiKey.first()
             val model = settingsRepository.model.first()
             val firecrawlKey = settingsRepository.firecrawlApiKey.first()
+            
             _uiState.update {
                 it.copy(
                     baseUrl = url,
                     apiKey = key,
                     modelName = model,
-                    firecrawlApiKey = firecrawlKey
+                    firecrawlApiKey = firecrawlKey,
+                    
+                    createPhotoProvider = settingsRepository.createPhotoProvider.first(),
+                    createPhotoApiKey = settingsRepository.createPhotoApiKey.first(),
+                    createPhotoBaseUrl = settingsRepository.createPhotoBaseUrl.first(),
+                    createPhotoEndpoint = settingsRepository.createPhotoEndpoint.first(),
+                    createPhotoModel = settingsRepository.createPhotoModel.first(),
+                    createPhotoFormat = settingsRepository.createPhotoFormat.first(),
+                    
+                    editPhotoProvider = settingsRepository.editPhotoProvider.first(),
+                    editPhotoApiKey = settingsRepository.editPhotoApiKey.first(),
+                    editPhotoBaseUrl = settingsRepository.editPhotoBaseUrl.first(),
+                    editPhotoEndpoint = settingsRepository.editPhotoEndpoint.first(),
+                    editPhotoModel = settingsRepository.editPhotoModel.first(),
+                    editPhotoFormat = settingsRepository.editPhotoFormat.first(),
+                    editPhotoImageFormat = settingsRepository.editPhotoImageFormat.first(),
+                    
+                    photoVideoProvider = settingsRepository.photoVideoProvider.first(),
+                    photoVideoApiKey = settingsRepository.photoVideoApiKey.first(),
+                    photoVideoBaseUrl = settingsRepository.photoVideoBaseUrl.first(),
+                    photoVideoCreateEndpoint = settingsRepository.photoVideoCreateEndpoint.first(),
+                    photoVideoStatusEndpoint = settingsRepository.photoVideoStatusEndpoint.first(),
+                    photoVideoResultEndpoint = settingsRepository.photoVideoResultEndpoint.first(),
+                    photoVideoModel = settingsRepository.photoVideoModel.first(),
+                    photoVideoFormat = settingsRepository.photoVideoFormat.first(),
+                    photoVideoImageFormat = settingsRepository.photoVideoImageFormat.first(),
+                    photoVideoDuration = settingsRepository.photoVideoDuration.first()
                 )
             }
         }
     }
 
-    fun updateBaseUrl(url: String) {
-        _uiState.update { it.copy(baseUrl = url, isSaved = false) }
-    }
-
-    fun updateApiKey(key: String) {
-        _uiState.update { it.copy(apiKey = key, isSaved = false) }
-    }
-
-    fun updateModelName(model: String) {
-        _uiState.update { it.copy(modelName = model, isSaved = false) }
-    }
-    
-    fun updateFirecrawlApiKey(key: String) {
-        _uiState.update { it.copy(firecrawlApiKey = key, isSaved = false) }
-    }
+    // Chat Settings Updaters
+    fun updateBaseUrl(url: String) { _uiState.update { it.copy(baseUrl = url, isSaved = false) } }
+    fun updateApiKey(key: String) { _uiState.update { it.copy(apiKey = key, isSaved = false) } }
+    fun updateModelName(model: String) { _uiState.update { it.copy(modelName = model, isSaved = false) } }
+    fun updateFirecrawlApiKey(key: String) { _uiState.update { it.copy(firecrawlApiKey = key, isSaved = false) } }
 
     fun applyPreset(presetName: String) {
         val (url, model) = when (presetName) {
@@ -97,6 +148,68 @@ class SettingsViewModel(
         }
     }
 
+    // Create Photo Updaters
+    fun updateCreatePhotoProvider(value: String) { _uiState.update { it.copy(createPhotoProvider = value, isCreatePhotoSaved = false) } }
+    fun updateCreatePhotoApiKey(value: String) { _uiState.update { it.copy(createPhotoApiKey = value, isCreatePhotoSaved = false) } }
+    fun updateCreatePhotoBaseUrl(value: String) { _uiState.update { it.copy(createPhotoBaseUrl = value, isCreatePhotoSaved = false) } }
+    fun updateCreatePhotoEndpoint(value: String) { _uiState.update { it.copy(createPhotoEndpoint = value, isCreatePhotoSaved = false) } }
+    fun updateCreatePhotoModel(value: String) { _uiState.update { it.copy(createPhotoModel = value, isCreatePhotoSaved = false) } }
+    fun updateCreatePhotoFormat(value: String) { _uiState.update { it.copy(createPhotoFormat = value, isCreatePhotoSaved = false) } }
+
+    fun saveCreatePhotoSettings() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            settingsRepository.saveCreatePhotoSettings(
+                state.createPhotoProvider, state.createPhotoApiKey, state.createPhotoBaseUrl,
+                state.createPhotoEndpoint, state.createPhotoModel, state.createPhotoFormat
+            )
+            _uiState.update { it.copy(isCreatePhotoSaved = true) }
+        }
+    }
+
+    // Edit Photo Updaters
+    fun updateEditPhotoProvider(value: String) { _uiState.update { it.copy(editPhotoProvider = value, isEditPhotoSaved = false) } }
+    fun updateEditPhotoApiKey(value: String) { _uiState.update { it.copy(editPhotoApiKey = value, isEditPhotoSaved = false) } }
+    fun updateEditPhotoBaseUrl(value: String) { _uiState.update { it.copy(editPhotoBaseUrl = value, isEditPhotoSaved = false) } }
+    fun updateEditPhotoEndpoint(value: String) { _uiState.update { it.copy(editPhotoEndpoint = value, isEditPhotoSaved = false) } }
+    fun updateEditPhotoModel(value: String) { _uiState.update { it.copy(editPhotoModel = value, isEditPhotoSaved = false) } }
+    fun updateEditPhotoFormat(value: String) { _uiState.update { it.copy(editPhotoFormat = value, isEditPhotoSaved = false) } }
+    fun updateEditPhotoImageFormat(value: String) { _uiState.update { it.copy(editPhotoImageFormat = value, isEditPhotoSaved = false) } }
+
+    fun saveEditPhotoSettings() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            settingsRepository.saveEditPhotoSettings(
+                state.editPhotoProvider, state.editPhotoApiKey, state.editPhotoBaseUrl,
+                state.editPhotoEndpoint, state.editPhotoModel, state.editPhotoFormat, state.editPhotoImageFormat
+            )
+            _uiState.update { it.copy(isEditPhotoSaved = true) }
+        }
+    }
+
+    // Photo Video Updaters
+    fun updatePhotoVideoProvider(value: String) { _uiState.update { it.copy(photoVideoProvider = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoApiKey(value: String) { _uiState.update { it.copy(photoVideoApiKey = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoBaseUrl(value: String) { _uiState.update { it.copy(photoVideoBaseUrl = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoCreateEndpoint(value: String) { _uiState.update { it.copy(photoVideoCreateEndpoint = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoStatusEndpoint(value: String) { _uiState.update { it.copy(photoVideoStatusEndpoint = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoResultEndpoint(value: String) { _uiState.update { it.copy(photoVideoResultEndpoint = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoModel(value: String) { _uiState.update { it.copy(photoVideoModel = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoFormat(value: String) { _uiState.update { it.copy(photoVideoFormat = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoImageFormat(value: String) { _uiState.update { it.copy(photoVideoImageFormat = value, isPhotoVideoSaved = false) } }
+    fun updatePhotoVideoDuration(value: String) { _uiState.update { it.copy(photoVideoDuration = value, isPhotoVideoSaved = false) } }
+
+    fun savePhotoVideoSettings() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            settingsRepository.savePhotoVideoSettings(
+                state.photoVideoProvider, state.photoVideoApiKey, state.photoVideoBaseUrl,
+                state.photoVideoCreateEndpoint, state.photoVideoStatusEndpoint, state.photoVideoResultEndpoint,
+                state.photoVideoModel, state.photoVideoFormat, state.photoVideoImageFormat, state.photoVideoDuration
+            )
+            _uiState.update { it.copy(isPhotoVideoSaved = true) }
+        }
+    }
     
     fun signInMicrosoft(activity: Activity) {
         viewModelScope.launch {
@@ -111,7 +224,7 @@ class SettingsViewModel(
     }
 
     fun resetSaveState() {
-        _uiState.update { it.copy(isSaved = false) }
+        _uiState.update { it.copy(isSaved = false, isCreatePhotoSaved = false, isEditPhotoSaved = false, isPhotoVideoSaved = false) }
     }
 
     class Factory(
@@ -127,3 +240,4 @@ class SettingsViewModel(
         }
     }
 }
+

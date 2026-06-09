@@ -50,12 +50,44 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     var showHistoryDialog by remember { mutableStateOf(false) }
+    
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var showMicPermissionDialog by remember { mutableStateOf(false) }
+
+    val micPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            android.widget.Toast.makeText(context, "Microphone access granted. Ready for voice input.", android.widget.Toast.LENGTH_SHORT).show()
+            // Voice input logic would go here
+        } else {
+            android.widget.Toast.makeText(context, "Microphone permission denied. You can enable it in Settings.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     LaunchedEffect(uiState.messages.size, uiState.isLoading) {
         val totalItems = uiState.messages.size + if (uiState.isLoading) 1 else 0
         if (totalItems > 0) {
             listState.animateScrollToItem(totalItems - 1)
         }
+    }
+
+    if (showMicPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showMicPermissionDialog = false },
+            title = { Text("Permission Required", color = Color.White) },
+            text = { Text("Microphone access is needed for voice input.", color = Color.White) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showMicPermissionDialog = false
+                    micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                }) { Text("OK", color = PrimaryNeon) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMicPermissionDialog = false }) { Text("Cancel", color = Color.Gray) }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
     }
 
     if (showHistoryDialog) {
@@ -100,7 +132,7 @@ fun ChatScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                         Text("Ai Chat", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
@@ -111,13 +143,35 @@ fun ChatScreen(
                     var showMenu by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { showMenu = true }) {
-                            Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu / Settings", tint = Color.White)
+                            Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
                         }
                         DropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false },
                             modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("New Chat", color = Color.White) },
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.createNewSession()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Chat History", color = Color.White) },
+                                onClick = {
+                                    showMenu = false
+                                    showHistoryDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Clear Current Chat", color = Color.White) },
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.clearChat()
+                                }
+                            )
+                            Divider(color = OutlineDark)
                             DropdownMenuItem(
                                 text = { Text("Settings", color = Color.White) },
                                 onClick = {
@@ -143,17 +197,9 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showHistoryDialog = true }) {
-                        Icon(imageVector = Icons.Filled.History, contentDescription = "History", tint = Color.White)
-                    }
-                    IconButton(onClick = { viewModel.createNewSession() }) {
-                        Icon(imageVector = Icons.Filled.Add, contentDescription = "New Chat", tint = Color.White)
-                    }
-                    IconButton(onClick = { viewModel.clearChat() }) {
-                        Icon(imageVector = Icons.Filled.Delete, contentDescription = "Delete Current Chat", tint = Color.White)
-                    }
+                    // Empty to make the title span wider
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -328,71 +374,56 @@ fun ChatScreen(
             }
 
             // Input Row
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
+                    .border(1.dp, OutlineDark, RoundedCornerShape(24.dp))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                contentAlignment = Alignment.CenterStart
             ) {
-                IconButton(
-                    onClick = { /* Add action */ },
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                        .size(48.dp)
-                ) {
-                    Icon(imageVector = Icons.Filled.Add, contentDescription = "Add", tint = Color.White)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
-                        .border(1.dp, OutlineDark, RoundedCornerShape(24.dp))
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BasicTextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            modifier = Modifier.weight(1f),
-                            textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-                            decorationBox = { innerTextField ->
-                                if (inputText.isEmpty()) {
-                                    Text("Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                innerTextField()
-                            },
-                            enabled = !uiState.isLoading
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BasicTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier.weight(1f),
+                        textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                        decorationBox = { innerTextField ->
+                            if (inputText.isEmpty()) {
+                                Text("Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            innerTextField()
+                        },
+                        enabled = !uiState.isLoading
+                    )
+                    
+                    if (inputText.isBlank()) {
                         Icon(
                             imageVector = Icons.Filled.Mic,
                             contentDescription = "Mic",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(24.dp).clickable {
+                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                    android.widget.Toast.makeText(context, "Voice input ready.", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showMicPermissionDialog = true
+                                }
+                            }
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            tint = PrimaryNeon,
+                            modifier = Modifier.size(24.dp).clickable {
+                                if (inputText.isNotBlank() && !uiState.isLoading) {
+                                    viewModel.sendMessage(inputText)
+                                    inputText = ""
+                                }
+                            }
                         )
                     }
-                }
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
-                    onClick = {
-                        viewModel.sendMessage(inputText)
-                        inputText = ""
-                    },
-                    enabled = inputText.isNotBlank() && !uiState.isLoading,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Brush.horizontalGradient(listOf(PrimaryBlue, PrimaryNeon)))
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = Color.White
-                    )
                 }
             }
         }

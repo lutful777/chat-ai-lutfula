@@ -25,6 +25,7 @@ class MicrosoftAuthService(private val context: Context) {
         initializeMsal()
     }
 
+    @Suppress("DEPRECATION")
     private fun getSignatureHash(): String {
         try {
             val info = context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_SIGNATURES)
@@ -142,11 +143,11 @@ class MicrosoftAuthService(private val context: Context) {
         val app = msalApp ?: return null
         val currentAccount = _account.value ?: return null
         return suspendCancellableCoroutine { continuation ->
-            app.acquireTokenSilentAsync(
-                scopes,
-                currentAccount,
-                app.configuration.defaultAuthority.authorityURL.toString(),
-                object : SilentAuthenticationCallback {
+            val parameters = AcquireTokenSilentParameters.Builder()
+                .fromAuthority(app.configuration.defaultAuthority.authorityURL.toString())
+                .withScopes(scopes.toList())
+                .forAccount(currentAccount)
+                .withCallback(object : SilentAuthenticationCallback {
                     override fun onSuccess(authenticationResult: IAuthenticationResult) {
                         continuation.resume(authenticationResult.accessToken)
                     }
@@ -156,8 +157,10 @@ class MicrosoftAuthService(private val context: Context) {
                         _account.value = null
                         continuation.resume(null)
                     }
-                }
-            )
+                })
+                .build()
+            
+            app.acquireTokenSilentAsync(parameters)
         }
     }
 

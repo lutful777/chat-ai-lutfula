@@ -27,7 +27,7 @@ data class ChatResponse(
 data class ChatChoice(
     val index: Int?,
     val message: ChatMessage?,
-    @Json(name = "finish_reason") val finishReason: String?
+    @param:Json(name = "finish_reason") val finishReason: String?
 )
 
 @JsonClass(generateAdapter = true)
