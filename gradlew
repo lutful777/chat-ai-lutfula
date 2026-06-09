@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GRADLE_VERSION="9.1.0"
+GRADLE_VERSION="9.3.1"
 GRADLE_DIR=".gradle-bin/gradle-${GRADLE_VERSION}"
 GRADLE_ZIP=".gradle-bin/gradle-${GRADLE_VERSION}-bin.zip"
 GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
