@@ -26,5 +26,8 @@ jobs:
     - name: Decode Keystore
       run: base64 -d debug.keystore.base64 > debug.keystore || true
 
+    - name: Generate Gradle Wrapper
+      run: gradle wrapper --gradle-version 9.3.1
+
     - name: Build with Gradle Wrapper
       run: ./gradlew assembleDebug
