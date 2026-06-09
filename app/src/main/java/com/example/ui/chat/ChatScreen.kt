@@ -209,65 +209,6 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Mode Selector
-            var expanded by remember { mutableStateOf(false) }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                val currentModeText = when (uiState.mode) {
-                    ChatMode.NORMAL -> "Normal"
-                    ChatMode.THINK -> "Think"
-                    ChatMode.THINK_DEEPLY -> "Think Deeply"
-                }
-
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Brush.horizontalGradient(listOf(PrimaryBlue, PrimaryNeon)))
-                        .clickable { expanded = true }
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = currentModeText,
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Filled.ArrowDropDown,
-                        contentDescription = "Change Mode",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    ChatMode.values().forEach { mode ->
-                        val modeText = when (mode) {
-                            ChatMode.NORMAL -> "Normal"
-                            ChatMode.THINK -> "Think"
-                            ChatMode.THINK_DEEPLY -> "Think Deeply"
-                        }
-                        DropdownMenuItem(
-                            text = { Text(modeText, color = Color.White) },
-                            onClick = {
-                                viewModel.setMode(mode)
-                                expanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
             if (uiState.emailContext != null) {
                 Card(
                     modifier = Modifier
@@ -446,7 +387,7 @@ fun MessageBubble(message: UiMessage) {
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 280.dp)
+                .fillMaxWidth(0.9f) // Allow it to be wider
                 .let {
                     if (isUser) {
                         it.background(Brush.horizontalGradient(listOf(PrimaryNeon, PrimaryBlue)), shape)
