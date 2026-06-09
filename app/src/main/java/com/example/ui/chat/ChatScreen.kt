@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
@@ -39,7 +41,8 @@ import com.example.ui.theme.PrimaryNeon
 fun ChatScreen(
     viewModel: ChatViewModel,
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToStudio: () -> Unit = {}
+    onNavigateToStudio: () -> Unit = {},
+    onNavigateToOutlook: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var inputText by remember { mutableStateOf("") }
@@ -77,6 +80,13 @@ fun ChatScreen(
                                 onClick = {
                                     showMenu = false
                                     onNavigateToSettings()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Outlook Mail", color = Color.White) },
+                                onClick = {
+                                    showMenu = false
+                                    onNavigateToOutlook()
                                 }
                             )
                             DropdownMenuItem(
@@ -159,6 +169,62 @@ fun ChatScreen(
                                 expanded = false
                             }
                         )
+                    }
+                }
+            }
+
+            if (uiState.emailContext != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Filled.Email, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Using Outlook email context", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.weight(1f))
+                            IconButton(onClick = { viewModel.clearEmailContext() }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Filled.Clear, contentDescription = "Remove email context", tint = Color.Gray)
+                            }
+                        }
+                    }
+                }
+                
+                // Quick action chips
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val actions = mutableListOf<String>()
+                    uiState.suggestedTranslationAction?.let { actions.add(it) }
+                    actions.addAll(listOf(
+                        "Summarize this email",
+                        "Explain this email",
+                        "Draft a reply",
+                        "Translate to Indonesian",
+                        "Find important points"
+                    ))
+                    items(actions.size) { index ->
+                        val action = actions[index]
+                        androidx.compose.material3.Surface(
+                            onClick = { viewModel.sendMessage(action) },
+                            shape = RoundedCornerShape(16.dp),
+                            color = PrimaryBlue.copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue)
+                        ) {
+                            Text(
+                                text = action,
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
                     }
                 }
             }

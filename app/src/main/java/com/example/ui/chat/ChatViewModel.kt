@@ -20,6 +20,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import com.example.data.ChatRepository
+import com.example.data.MessageEntity
+import kotlinx.coroutines.flow.map
+import com.google.mlkit.nl.languageid.LanguageIdentification
 
 enum class ChatMode {
     NORMAL, THINK, THINK_DEEPLY
@@ -36,11 +40,14 @@ data class ChatUiState(
     val messages: List<UiMessage> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val mode: ChatMode = ChatMode.NORMAL
+    val mode: ChatMode = ChatMode.NORMAL,
+    val emailContext: String? = null,
+    val suggestedTranslationAction: String? = null
 )
 
 class ChatViewModel(
     private val settingsRepository: SettingsRepository,
+    private val chatRepository: ChatRepository,
     private val okHttpClient: OkHttpClient,
     private val moshi: Moshi
 ) : ViewModel() {
@@ -48,22 +55,52 @@ class ChatViewModel(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            chatRepository.allMessages.collect { messages ->
+                _uiState.update { state ->
+                    state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content) })
+                }
+            }
+        }
+    }
+
     fun setMode(mode: ChatMode) {
         _uiState.update { it.copy(mode = mode) }
     }
 
+    fun setEmailContext(context: String?) {
+        _uiState.update { it.copy(emailContext = context, suggestedTranslationAction = null) }
+        
+        if (context != null) {
+            val languageIdentifier = LanguageIdentification.getClient()
+            languageIdentifier.identifyLanguage(context)
+                .addOnSuccessListener { languageCode ->
+                    if (languageCode != "und" && languageCode != "en") {
+                        val languageName = java.util.Locale(languageCode).displayLanguage
+                        _uiState.update { it.copy(suggestedTranslationAction = "Translate from $languageName to English") }
+                    }
+                }
+        }
+    }
+
+    fun clearEmailContext() {
+        _uiState.update { it.copy(emailContext = null, suggestedTranslationAction = null) }
+    }
+
     fun clearChat() {
-        _uiState.update { it.copy(messages = emptyList(), error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.clearHistory()
+            _uiState.update { it.copy(error = null) }
+        }
     }
 
     fun sendMessage(userText: String) {
         val messageText = userText.trim()
         if (messageText.isEmpty()) return
 
-        val userMessage = UiMessage(role = "user", content = messageText)
         _uiState.update { 
             it.copy(
-                messages = it.messages + userMessage,
                 isLoading = true,
                 error = null
             )
@@ -71,6 +108,8 @@ class ChatViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                chatRepository.insertMessage(MessageEntity(role = "user", content = messageText))
+                
                 val apiKey = settingsRepository.apiKey.first()
                 val baseUrl = settingsRepository.baseUrl.first()
                 val modelName = settingsRepository.model.first()
@@ -90,10 +129,7 @@ class ChatViewModel(
                 var searchLinks = ""
                 
                 if (firecrawlKey.isBlank()) {
-                    _uiState.update {
-                        val warningMessage = UiMessage(role = "assistant", content = "⚠️ Real-time search API key is missing. Answering without live search.")
-                        it.copy(messages = it.messages + warningMessage)
-                    }
+                    chatRepository.insertMessage(MessageEntity(role = "assistant", content = "⚠️ Real-time search API key is missing. Answering without live search."))
                 } else {
                     try {
                         val searchAdapter = moshi.adapter(com.example.network.FirecrawlSearchRequest::class.java)
@@ -123,16 +159,10 @@ class ChatViewModel(
                                 searchLinks = "\n\nSources:\n" + topResults.joinToString("\n") { "• ${it.title ?: "Link"}\n  ${it.url}" }
                             }
                         } else {
-                            _uiState.update {
-                                val warningMessage = UiMessage(role = "assistant", content = "⚠️ Real-time search failed, answering without live search.")
-                                it.copy(messages = it.messages + warningMessage)
-                            }
+                            chatRepository.insertMessage(MessageEntity(role = "assistant", content = "⚠️ Real-time search failed, answering without live search."))
                         }
                     } catch (e: Exception) {
-                        _uiState.update {
-                            val warningMessage = UiMessage(role = "assistant", content = "⚠️ Real-time search failed, answering without live search.")
-                            it.copy(messages = it.messages + warningMessage)
-                        }
+                        chatRepository.insertMessage(MessageEntity(role = "assistant", content = "⚠️ Real-time search failed, answering without live search."))
                     }
                 }
 
@@ -153,6 +183,11 @@ class ChatViewModel(
                 
                 if (searchContext.isNotEmpty()) {
                     systemPrompt += "\n\n$searchContext"
+                }
+
+                val emailContext = _uiState.value.emailContext
+                if (emailContext != null) {
+                    systemPrompt += "\n\nThe user requested to use the following email as context:\n$emailContext"
                 }
 
                 val chatMessages = mutableListOf<ChatMessage>()
@@ -200,12 +235,11 @@ class ChatViewModel(
                         } else {
                             assistantReply
                         }
-                        val assistantMessage = UiMessage(role = "assistant", content = finalReply)
+                        
+                        chatRepository.insertMessage(MessageEntity(role = "assistant", content = finalReply))
+                        
                         _uiState.update {
-                            it.copy(
-                                messages = it.messages + assistantMessage,
-                                isLoading = false
-                            )
+                            it.copy(isLoading = false)
                         }
                     }
                 } else {
@@ -241,13 +275,14 @@ class ChatViewModel(
 
     class Factory(
         private val settingsRepository: SettingsRepository,
+        private val chatRepository: ChatRepository,
         private val okHttpClient: OkHttpClient,
         private val moshi: Moshi
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
-                return ChatViewModel(settingsRepository, okHttpClient, moshi) as T
+                return ChatViewModel(settingsRepository, chatRepository, okHttpClient, moshi) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

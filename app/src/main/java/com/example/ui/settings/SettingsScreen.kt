@@ -40,6 +40,9 @@ import com.example.ui.theme.PrimaryBlue
 import com.example.ui.theme.PrimaryNeon
 import com.example.ui.theme.SuccessGreen
 
+import androidx.compose.ui.platform.LocalContext
+import android.app.Activity
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -48,6 +51,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var passwordVisible by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val presets = listOf(
         ProviderData("OpenAI", "api.openai.com", Icons.Filled.AutoAwesome),
@@ -146,6 +150,49 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Microsoft Account Section
+            Text("Microsoft Connection", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, OutlineDark, RoundedCornerShape(16.dp)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    val account = uiState.microsoftAccount
+                    if (account != null) {
+                        Text("Connected Account", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(account.username ?: "Unknown", fontSize = 16.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { viewModel.signOutMicrosoft() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f))
+                        ) {
+                            Text("Disconnect", color = Color.White)
+                        }
+                    } else {
+                        Text("No Microsoft Account Connected", fontSize = 14.sp, color = Color.LightGray)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = { 
+                                val activity = context as? Activity
+                                if (activity != null) {
+                                    viewModel.signInMicrosoft(activity)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                        ) {
+                            Text("Connect Outlook / Hotmail", color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Input Fields
             OutlinedTextField(
                 value = uiState.baseUrl,
@@ -231,8 +278,8 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(16.dp)
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
-
+            Spacer(modifier = Modifier.height(24.dp))
+            
             // Buttons
             Button(
                 onClick = { viewModel.save() },

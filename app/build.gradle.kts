@@ -18,6 +18,11 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    
+    // Fallback if not configured in .env
+    val signatureHashFallback = "EfKLa/C+05Hz/xBbYz1eP6zecJ0="
+    val signatureHash = project.findProperty("MICROSOFT_SIGNATURE_HASH")?.toString()?.takeIf { it.isNotBlank() && it != "YOUR_BASE64_SIGNATURE_HASH" } ?: signatureHashFallback
+    manifestPlaceholders["msalSignatureHash"] = signatureHash
   }
 
   signingConfigs {
@@ -100,6 +105,8 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  implementation(libs.msal)
+  implementation(libs.mlkit.language.id)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

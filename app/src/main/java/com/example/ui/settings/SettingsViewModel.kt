@@ -1,26 +1,31 @@
 package com.example.ui.settings
 
+import android.app.Activity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.SettingsRepository
+import com.example.data.MicrosoftAuthService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.microsoft.identity.client.IAccount
 
 data class SettingsUiState(
     val baseUrl: String = "",
     val apiKey: String = "",
     val modelName: String = "",
     val firecrawlApiKey: String = "",
-    val isSaved: Boolean = false
+    val isSaved: Boolean = false,
+    val microsoftAccount: IAccount? = null
 )
 
 class SettingsViewModel(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val microsoftAuthService: MicrosoftAuthService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -28,6 +33,11 @@ class SettingsViewModel(
 
     init {
         loadSettings()
+        viewModelScope.launch {
+            microsoftAuthService.account.collect { account ->
+                _uiState.update { it.copy(microsoftAccount = account) }
+            }
+        }
     }
 
     private fun loadSettings() {
@@ -88,17 +98,30 @@ class SettingsViewModel(
     }
 
     
+    fun signInMicrosoft(activity: Activity) {
+        viewModelScope.launch {
+            microsoftAuthService.acquireTokenInteractive(activity)
+        }
+    }
+
+    fun signOutMicrosoft() {
+        viewModelScope.launch {
+            microsoftAuthService.signOut()
+        }
+    }
+
     fun resetSaveState() {
         _uiState.update { it.copy(isSaved = false) }
     }
 
     class Factory(
-        private val settingsRepository: SettingsRepository
+        private val settingsRepository: SettingsRepository,
+        private val microsoftAuthService: MicrosoftAuthService
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
-                return SettingsViewModel(settingsRepository) as T
+                return SettingsViewModel(settingsRepository, microsoftAuthService) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

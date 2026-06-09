@@ -3,6 +3,7 @@ package com.example.ui.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -23,12 +24,14 @@ import com.example.ui.chat.ChatScreen
 import com.example.ui.chat.ChatViewModel
 import com.example.ui.settings.SettingsScreen
 import com.example.ui.settings.SettingsViewModel
+import com.example.data.EmailMessage
 
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Welcome : Screen("welcome", "Welcome", Icons.AutoMirrored.Filled.Chat)
     object Chat : Screen("chat", "Chat", Icons.AutoMirrored.Filled.Chat)
     object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
     object Studio : Screen("studio", "AI Studio", Icons.Filled.Movie)
+    object Outlook : Screen("outlook", "Outlook", Icons.Filled.Email)
 }
 
 @Composable
@@ -37,16 +40,20 @@ fun AppNavigation() {
     val context = androidx.compose.ui.platform.LocalContext.current
     
     val settingsRepository = AppContainer.getSettingsRepository(context)
+    val chatRepository = AppContainer.getChatRepository(context)
+
     val chatViewModel: ChatViewModel = viewModel(
         factory = ChatViewModel.Factory(
             settingsRepository,
+            chatRepository,
             AppContainer.okHttpClient,
             AppContainer.moshi
         )
     )
     val settingsViewModel: SettingsViewModel = viewModel(
         factory = SettingsViewModel.Factory(
-            settingsRepository
+            settingsRepository,
+            AppContainer.getMicrosoftAuthService(context)
         )
     )
 
@@ -73,7 +80,8 @@ fun AppNavigation() {
                 ChatScreen(
                     viewModel = chatViewModel,
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                    onNavigateToStudio = { navController.navigate(Screen.Studio.route) }
+                    onNavigateToStudio = { navController.navigate(Screen.Studio.route) },
+                    onNavigateToOutlook = { navController.navigate(Screen.Outlook.route) }
                 )
             }
             composable(Screen.Settings.route) {
@@ -93,6 +101,31 @@ fun AppNavigation() {
                 com.example.ui.studio.StudioScreen(
                     viewModel = studioViewModel,
                     onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.Outlook.route) {
+                val outlookViewModel: com.example.ui.outlook.OutlookViewModel = viewModel(
+                    factory = com.example.ui.outlook.OutlookViewModel.Factory(
+                        AppContainer.getMicrosoftGraphRepository(context)
+                    )
+                )
+                com.example.ui.outlook.OutlookScreen(
+                    viewModel = outlookViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onAskAi = { email ->
+                        val sender = email.sender?.emailAddress?.name ?: email.sender?.emailAddress?.address ?: "Unknown Sender"
+                        val subject = email.subject ?: "(No Subject)"
+                        val date = email.receivedDateTime ?: "Unknown Date"
+                        val body = email.bodyPreview ?: ""
+                        
+                        val contextText = "Sender: $sender\nSubject: $subject\nDate: $date\n\nBody Preview:\n$body"
+                        
+                        chatViewModel.setEmailContext(contextText)
+                        
+                        navController.navigate(Screen.Chat.route) {
+                            popUpTo(Screen.Outlook.route) { inclusive = true }
+                        }
+                    }
                 )
             }
         }
