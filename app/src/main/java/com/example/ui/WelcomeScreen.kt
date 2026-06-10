@@ -32,26 +32,13 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
     ) {
         Spacer(modifier = Modifier.weight(1f))
         
-        // App Title/Logo area
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(PrimaryNeon.copy(alpha = 0.5f), Color.Transparent)
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Filled.AutoAwesome,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = PrimaryNeon
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "Wellcome",
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold
+            ),
+            color = Color.White
+        )
         
         Text(
             text = "Ai Chat",

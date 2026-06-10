@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,9 +83,10 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(uiState.messages.size, uiState.isLoading) {
+    LaunchedEffect(uiState.messages, uiState.isLoading) {
         val totalItems = uiState.messages.size + if (uiState.isLoading) 1 else 0
         if (totalItems > 0) {
+            kotlinx.coroutines.delay(100)
             listState.animateScrollToItem(totalItems - 1)
         }
     }
@@ -253,14 +256,8 @@ fun ChatScreen(
                 }
                 if (uiState.isLoading) {
                     item(key = "loading_indicator") {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().animateItem(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.padding(16.dp),
-                                color = PrimaryNeon
-                            )
+                        Box(modifier = Modifier.animateItem()) {
+                            TypingBubble()
                         }
                     }
                 }
@@ -487,6 +484,8 @@ fun MessageBubble(message: UiMessage) {
     } else {
         RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp)
     }
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val maxBubbleWidth = if (isUser) configuration.screenWidthDp.dp * 0.76f else configuration.screenWidthDp.dp * 0.94f
 
     Box(
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
@@ -494,7 +493,7 @@ fun MessageBubble(message: UiMessage) {
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.7f) // Adjusted to 70%
+                .widthIn(max = maxBubbleWidth)
                 .let {
                     if (isUser) {
                         it.background(Brush.horizontalGradient(listOf(PrimaryNeon, PrimaryBlue)), shape)
@@ -623,7 +622,8 @@ fun MessageContent(content: String, isUser: Boolean) {
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 12.sp,
-                                lineHeight = 16.sp
+                                lineHeight = 16.sp,
+                                modifier = Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())
                             )
                         }
                     }
@@ -631,4 +631,22 @@ fun MessageContent(content: String, isUser: Boolean) {
             }
         }
     }
+}
+
+@Composable
+fun TypingBubble() {
+    val infiniteTransition = rememberInfiniteTransition(label = "dots")
+    val dotCount by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "dots"
+    )
+    val dots = ".".repeat(dotCount.toInt().coerceIn(0, 3))
+    val text = "Ai Chat typing$dots"
+    
+    MessageBubble(message = UiMessage(role = "model", content = text))
 }
