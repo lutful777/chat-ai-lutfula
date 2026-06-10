@@ -398,19 +398,33 @@ class StudioViewModel(
         } else {
             val stringUri = imageUri.toString()
             val imgStr = if (stringUri.startsWith("http")) {
-                if (imageFormatSetting == "base64") getBase64FromUrl(stringUri) else stringUri
+                if (imageFormatSetting == "base64") {
+                    val b64 = getBase64FromUrl(stringUri)
+                    if (b64 != null) "data:image/jpeg;base64,$b64" else null
+                } else {
+                    stringUri
+                }
             } else {
-                getBase64FromUri(imageUri, economyMode)
+                val b64 = getBase64FromUri(imageUri, economyMode)
+                if (b64 != null) "data:image/jpeg;base64,$b64" else null
             }
             
             JSONObject().apply {
                 if (prompt.isNotBlank()) put("prompt", prompt)
                 if (model.isNotBlank()) put("model", model)
                 if (actualDuration.isNotBlank()) put("duration", actualDuration)
-                if (imageFormatSetting == "url") {
-                    put("image_url", imgStr ?: "")
+                
+                if (baseUrl.contains("api.x.ai")) {
+                    val imageObj = JSONObject().apply {
+                        put("url", imgStr ?: "")
+                    }
+                    put("image", imageObj)
                 } else {
-                    put("image", imgStr ?: "")
+                    if (imageFormatSetting == "url") {
+                        put("image_url", imgStr ?: "")
+                    } else {
+                        put("image", imgStr ?: "")
+                    }
                 }
             }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }
@@ -442,14 +456,16 @@ class StudioViewModel(
                 }
             }
         } else {
+            val safeBody = if (body.length > 200) body.substring(0, 200) + "..." else body
             val errorMsg = when (response.code) {
-                400 -> "Invalid request. Check model, prompt, or required image input.\nProvider output: $body"
+                400 -> "Invalid request. Check model, prompt, or required image input.\nProvider output: $safeBody"
                 401 -> "Invalid API key."
                 402 -> "Provider credit or billing issue."
                 404 -> "Endpoint not found. Check Base URL and Path in Settings."
-                415 -> "Error ${response.code}: Unsupported Media Type. Check Request Format (JSON vs multipart) and endpoint.\nProvider output: $body"
+                415 -> "Error ${response.code}: Unsupported Media Type. Check Request Format (JSON vs multipart) and endpoint.\nProvider output: $safeBody"
+                422 -> "Video request failed. The image payload format is not accepted. Try base64 data URI, URL, or multipart.\nProvider output: $safeBody"
                 429 -> "Rate limit exceeded."
-                else -> "Error ${response.code}: $body"
+                else -> "Error ${response.code}: $safeBody"
             }
             _uiState.update { it.copy(isGenerating = false, error = errorMsg) }
         }
