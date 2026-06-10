@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.animation.core.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -539,6 +541,31 @@ fun MessageBubble(message: UiMessage) {
             }
             if (message.content.isNotBlank()) {
                 MessageContent(content = message.content, isUser = isUser)
+            }
+            if (!isUser) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    val clipboardManager = LocalClipboardManager.current
+                    var buttonText by remember { mutableStateOf("Copy") }
+                    val scope = rememberCoroutineScope()
+                    
+                    Text(
+                        text = buttonText,
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable {
+                                clipboardManager.setText(AnnotatedString(message.content))
+                                buttonText = "Copied"
+                                scope.launch {
+                                    kotlinx.coroutines.delay(2000)
+                                    buttonText = "Copy"
+                                }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
     }
