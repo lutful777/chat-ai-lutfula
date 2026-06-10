@@ -222,7 +222,13 @@ fun StudioScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = PrimaryNeon)
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(uiState.videoStatus ?: "Generating content...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val loadingText = uiState.videoStatus ?: when (uiState.selectedTab) {
+                            0 -> "Generating photo..."
+                            1 -> "Editing photo..."
+                            2 -> "Generating video..."
+                            else -> "Generating content..."
+                        }
+                        Text(loadingText, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else if (!uiState.error.isNullOrEmpty()) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {

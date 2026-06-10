@@ -129,6 +129,7 @@ class StudioViewModel(
 
     fun generate() {
         val state = _uiState.value
+        if (state.isGenerating) return
         
         _uiState.update { it.copy(isGenerating = true, error = null, videoStatus = null) }
         
@@ -179,7 +180,7 @@ class StudioViewModel(
                 put("prompt", prompt)
                 if (model.isNotBlank()) put("model", model)
                 if (economyMode) put("n", 1)
-            }.toString().toRequestBody("application/json".toMediaType())
+            }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }
 
         val request = Request.Builder()
@@ -191,10 +192,16 @@ class StudioViewModel(
         val response = okHttpClient.newCall(request).execute()
         val responseBody = response.body?.string() ?: ""
         
+        android.util.Log.d("StudioViewModel", "Create Photo API response: ${response.code} $responseBody")
+        
         handleImageResponse(response.code, responseBody)
     }
     
     private suspend fun editImage(prompt: String, imageUri: Uri?) {
+        if (prompt.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please enter a prompt first.") }
+            return
+        }
         if (imageUri == null) {
             _uiState.update { it.copy(isGenerating = false, error = "Please select a photo first.") }
             return
@@ -226,12 +233,22 @@ class StudioViewModel(
             }
             builder.build()
         } else {
-            val b64 = getBase64FromUri(imageUri, economyMode)
+            val stringUri = imageUri.toString()
+            val imgStr = if (stringUri.startsWith("http")) {
+                if (imageFormatSetting == "base64") getBase64FromUrl(stringUri) else stringUri
+            } else {
+                getBase64FromUri(imageUri, economyMode)
+            }
+            
             JSONObject().apply {
                 if (prompt.isNotBlank()) put("prompt", prompt)
                 if (model.isNotBlank()) put("model", model)
-                put("image", b64 ?: "")
-            }.toString().toRequestBody("application/json".toMediaType())
+                if (imageFormatSetting == "url") {
+                     put("image_url", imgStr ?: "")
+                } else {
+                     put("image", imgStr ?: "")
+                }
+            }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }
 
         val request = Request.Builder()
@@ -242,6 +259,8 @@ class StudioViewModel(
             
         val response = okHttpClient.newCall(request).execute()
         val responseBody = response.body?.string() ?: ""
+        
+        android.util.Log.d("StudioViewModel", "Edit Photo API response: ${response.code} $responseBody")
         
         handleImageResponse(response.code, responseBody)
     }
@@ -320,18 +339,23 @@ class StudioViewModel(
             }
         } else {
             val errorMsg = when (code) {
-                400 -> "Invalid request. Check model, prompt, or required image input."
+                400 -> "Invalid request. Check model, prompt, or required image input.\nProvider output: $body"
                 401 -> "Invalid API key."
                 402 -> "Provider credit or billing issue."
                 404 -> "Endpoint not found. Check Base URL and Path in Settings."
+                415 -> "Error $code: Unsupported Media Type. Check Request Format (JSON vs multipart) and endpoint.\nProvider output: $body"
                 429 -> "Rate limit exceeded."
-                else -> "Error $code"
+                else -> "Error $code: $body"
             }
             _uiState.update { it.copy(isGenerating = false, error = errorMsg) }
         }
     }
     
     private suspend fun generateVideo(prompt: String, imageUri: Uri?) {
+        if (prompt.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please enter a prompt first.") }
+            return
+        }
         if (imageUri == null) {
              _uiState.update { it.copy(isGenerating = false, error = "Please select or generate a photo first.") }
              return
@@ -388,7 +412,7 @@ class StudioViewModel(
                 } else {
                     put("image", imgStr ?: "")
                 }
-            }.toString().toRequestBody("application/json".toMediaType())
+            }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }
 
         val request = Request.Builder()
@@ -399,6 +423,8 @@ class StudioViewModel(
             
         val response = okHttpClient.newCall(request).execute()
         val body = response.body?.string() ?: ""
+        
+        android.util.Log.d("StudioViewModel", "Photo to Video API response: ${response.code} $body")
         
         if (response.code in 200..299) {
             // Check if it returned a video URL immediately
@@ -417,20 +443,27 @@ class StudioViewModel(
             }
         } else {
             val errorMsg = when (response.code) {
-                400 -> "Invalid request. Check model, prompt, or required image input."
+                400 -> "Invalid request. Check model, prompt, or required image input.\nProvider output: $body"
                 401 -> "Invalid API key."
                 402 -> "Provider credit or billing issue."
                 404 -> "Endpoint not found. Check Base URL and Path in Settings."
+                415 -> "Error ${response.code}: Unsupported Media Type. Check Request Format (JSON vs multipart) and endpoint.\nProvider output: $body"
                 429 -> "Rate limit exceeded."
-                else -> "Error ${response.code}"
+                else -> "Error ${response.code}: $body"
             }
             _uiState.update { it.copy(isGenerating = false, error = errorMsg) }
         }
     }
     
     private suspend fun pollVideoStatus(reqId: String, apiKey: String, baseUrl: String, statusEndpoint: String) {
-        var pollingUrl = "$baseUrl/$statusEndpoint".replace("{id}", reqId)
-        if (!pollingUrl.contains(reqId)) pollingUrl = "$pollingUrl/$reqId"
+        var pollingUrl = "$baseUrl/$statusEndpoint"
+            .replace("{id}", reqId)
+            .replace("{request_id}", reqId)
+            .replace("{task_id}", reqId)
+            
+        if (!statusEndpoint.contains("{") && !pollingUrl.endsWith("/$reqId")) {
+            pollingUrl = "$pollingUrl/$reqId"
+        }
         
         _uiState.update { it.copy(videoStatus = "Processing...") }
         
@@ -488,8 +521,14 @@ class StudioViewModel(
     }
     
     private suspend fun fetchVideoResult(reqId: String, apiKey: String, baseUrl: String, resultEndpoint: String) {
-        var resUrl = "$baseUrl/$resultEndpoint".replace("{id}", reqId)
-        if (!resUrl.contains(reqId)) resUrl = "$resUrl/$reqId"
+        var resUrl = "$baseUrl/$resultEndpoint"
+            .replace("{id}", reqId)
+            .replace("{request_id}", reqId)
+            .replace("{task_id}", reqId)
+            
+        if (!resultEndpoint.contains("{") && !resUrl.endsWith("/$reqId")) {
+            resUrl = "$resUrl/$reqId"
+        }
         
         try {
             val request = Request.Builder()
