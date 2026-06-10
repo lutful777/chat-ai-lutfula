@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Email
@@ -85,11 +86,14 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(uiState.messages, uiState.isLoading) {
+    LaunchedEffect(uiState.messages.size, uiState.isLoading) {
         val totalItems = uiState.messages.size + if (uiState.isLoading) 1 else 0
         if (totalItems > 0) {
-            kotlinx.coroutines.delay(100)
-            listState.animateScrollToItem(totalItems - 1)
+            val atBottom = !listState.canScrollForward
+            if (atBottom || uiState.isLoading) {
+                kotlinx.coroutines.delay(100)
+                listState.animateScrollToItem(totalItems - 1)
+            }
         }
     }
 
@@ -239,28 +243,63 @@ fun ChatScreen(
                 }
             }
 
-            LazyColumn(
-                state = listState,
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(
-                    items = uiState.messages,
-                    key = { it.id }
-                ) { message ->
-                    Box(modifier = Modifier.animateItem()) {
-                        MessageBubble(message)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(
+                        items = uiState.messages,
+                        key = { it.id }
+                    ) { message ->
+                        Box(modifier = Modifier.animateItem()) {
+                            MessageBubble(message)
+                        }
+                    }
+                    if (uiState.isLoading) {
+                        item(key = "loading_indicator") {
+                            Box(modifier = Modifier.animateItem()) {
+                                TypingBubble()
+                            }
+                        }
                     }
                 }
-                if (uiState.isLoading) {
-                    item(key = "loading_indicator") {
-                        Box(modifier = Modifier.animateItem()) {
-                            TypingBubble()
-                        }
+
+                val showScrollToBottom by remember {
+                    derivedStateOf { listState.canScrollForward }
+                }
+                
+                if (showScrollToBottom) {
+                    val scope = rememberCoroutineScope()
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                val target = uiState.messages.size + (if (uiState.isLoading) 1 else 0) - 1
+                                if (target >= 0) {
+                                    listState.animateScrollToItem(target)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 12.dp)
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowDownward,
+                            contentDescription = "Scroll to bottom",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }

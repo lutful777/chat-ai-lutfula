@@ -144,6 +144,8 @@ class ChatViewModel(
         val messageText = userText.trim()
         if (messageText.isEmpty() && imageUri == null) return
 
+        val previousMessagesSnapshot = _uiState.value.messages.toList()
+
         _uiState.update { 
             it.copy(
                 isLoading = true,
@@ -256,10 +258,12 @@ class ChatViewModel(
                 val chatMessages = mutableListOf<ChatMessage>()
                 chatMessages.add(ChatMessage(role = "system", content = systemPrompt))
                 
-                // Map existing messages (excluding the warnings if any)
-                chatMessages.addAll(_uiState.value.messages.filter { !it.content.startsWith("⚠️") }.map { 
+                // Map existing messages (excluding the warnings if any) from the snapshot
+                chatMessages.addAll(previousMessagesSnapshot.filter { !it.content.startsWith("⚠️") }.map { 
                     ChatMessage(role = it.role, content = it.content) 
                 })
+                // Manually append the latest user message
+                chatMessages.add(ChatMessage(role = "user", content = messageText))
 
                 val enableReasoningParameter = true // Settings flag
 
