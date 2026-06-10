@@ -1,5 +1,11 @@
 package com.example.ui.chat
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,6 +54,11 @@ fun ChatScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var inputText by remember { mutableStateOf("") }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri -> selectedImageUri = uri }
+    )
     val listState = rememberLazyListState()
     var showHistoryDialog by remember { mutableStateOf(false) }
     
@@ -131,85 +142,18 @@ fun ChatScreen(
     }
 
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Text("Ai Chat", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
-                        Text("Private Ai Assistant", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                navigationIcon = {
-                    var showMenu by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("New Chat", color = Color.White) },
-                                onClick = {
-                                    showMenu = false
-                                    viewModel.createNewSession()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Chat History", color = Color.White) },
-                                onClick = {
-                                    showMenu = false
-                                    showHistoryDialog = true
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Clear Current Chat", color = Color.White) },
-                                onClick = {
-                                    showMenu = false
-                                    viewModel.clearChat()
-                                }
-                            )
-                            Divider(color = OutlineDark)
-                            DropdownMenuItem(
-                                text = { Text("Settings", color = Color.White) },
-                                onClick = {
-                                    showMenu = false
-                                    onNavigateToSettings()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Outlook Mail", color = Color.White) },
-                                onClick = {
-                                    showMenu = false
-                                    onNavigateToOutlook()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("AI Studio", color = Color.White) },
-                                onClick = {
-                                    showMenu = false
-                                    onNavigateToStudio()
-                                }
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    // Empty to make the title span wider
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
-        Column(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { _ ->
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .imePadding()
+                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+            ) {
             if (uiState.emailContext != null) {
                 Card(
                     modifier = Modifier
@@ -316,55 +260,151 @@ fun ChatScreen(
             }
 
             // Input Row
+            Column {
+                if (selectedImageUri != null) {
+                    Box(modifier = Modifier.padding(start = 24.dp, bottom = 0.dp)) {
+                        AsyncImage(
+                            model = selectedImageUri,
+                            contentDescription = "Selected image preview",
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentScale = ContentScale.Crop
+                        )
+                        IconButton(
+                            onClick = { selectedImageUri = null },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 8.dp, y = (-8).dp)
+                                .size(24.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                        ) {
+                            Icon(Icons.Filled.Clear, contentDescription = "Remove image", tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
+                        .border(1.dp, OutlineDark, RoundedCornerShape(24.dp))
+                        .padding(start = 8.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { imagePickerLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Filled.Image, contentDescription = "Add photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        BasicTextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            modifier = Modifier.weight(1f),
+                            textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                            decorationBox = { innerTextField ->
+                                if (inputText.isEmpty()) {
+                                    Text("Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                innerTextField()
+                            },
+                            enabled = !uiState.isLoading
+                        )
+                        
+                        if (inputText.isBlank() && selectedImageUri == null) {
+                            Icon(
+                                imageVector = Icons.Filled.Mic,
+                                contentDescription = "Mic",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp).clickable {
+                                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        android.widget.Toast.makeText(context, "Voice input ready.", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        showMicPermissionDialog = true
+                                    }
+                                }
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = PrimaryNeon,
+                                modifier = Modifier.size(24.dp).clickable {
+                                    if ((inputText.isNotBlank() || selectedImageUri != null) && !uiState.isLoading) {
+                                        viewModel.sendMessage(inputText, selectedImageUri?.toString())
+                                        inputText = ""
+                                        selectedImageUri = null
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        } // Close the Column
+
+        // Floating Menu Button
+        var showMenu by remember { mutableStateOf(false) }
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(1.dp, OutlineDark)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                contentAlignment = Alignment.CenterStart
+                    .padding(8.dp)
+                    .align(Alignment.TopStart)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BasicTextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        modifier = Modifier.weight(1f),
-                        textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-                        decorationBox = { innerTextField ->
-                            if (inputText.isEmpty()) {
-                                Text("Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            innerTextField()
-                        },
-                        enabled = !uiState.isLoading
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("New Chat", color = Color.White) },
+                        onClick = {
+                            showMenu = false
+                            viewModel.createNewSession()
+                        }
                     )
-                    
-                    if (inputText.isBlank()) {
-                        Icon(
-                            imageVector = Icons.Filled.Mic,
-                            contentDescription = "Mic",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp).clickable {
-                                if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                    android.widget.Toast.makeText(context, "Voice input ready.", android.widget.Toast.LENGTH_SHORT).show()
-                                } else {
-                                    showMicPermissionDialog = true
-                                }
-                            }
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = PrimaryNeon,
-                            modifier = Modifier.size(24.dp).clickable {
-                                if (inputText.isNotBlank() && !uiState.isLoading) {
-                                    viewModel.sendMessage(inputText)
-                                    inputText = ""
-                                }
-                            }
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = { Text("Chat History", color = Color.White) },
+                        onClick = {
+                            showMenu = false
+                            showHistoryDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Clear Current Chat", color = Color.White) },
+                        onClick = {
+                            showMenu = false
+                            viewModel.clearChat()
+                        }
+                    )
+                    Divider(color = OutlineDark)
+                    DropdownMenuItem(
+                        text = { Text("Settings", color = Color.White) },
+                        onClick = {
+                            showMenu = false
+                            onNavigateToSettings()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Outlook Mail", color = Color.White) },
+                        onClick = {
+                            showMenu = false
+                            onNavigateToOutlook()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("AI Studio", color = Color.White) },
+                        onClick = {
+                            showMenu = false
+                            onNavigateToStudio()
+                        }
+                    )
                 }
             }
         }
@@ -382,12 +422,12 @@ fun MessageBubble(message: UiMessage) {
     }
 
     Box(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
         contentAlignment = alignment
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.9f) // Allow it to be wider
+                .fillMaxWidth(0.7f) // Adjusted to 70%
                 .let {
                     if (isUser) {
                         it.background(Brush.horizontalGradient(listOf(PrimaryNeon, PrimaryBlue)), shape)
@@ -397,7 +437,7 @@ fun MessageBubble(message: UiMessage) {
                             .border(1.dp, OutlineDark, shape)
                     }
                 }
-                .padding(16.dp)
+                .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
             if (!isUser) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
@@ -419,13 +459,27 @@ fun MessageBubble(message: UiMessage) {
                     )
                 }
             }
-            Text(
-                text = message.content,
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
-            )
+            if (message.imageUri != null) {
+                AsyncImage(
+                    model = message.imageUri,
+                    contentDescription = "Attached image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .padding(bottom = if (message.content.isNotBlank()) 8.dp else 0.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            if (message.content.isNotBlank()) {
+                Text(
+                    text = message.content,
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            }
         }
     }
 }

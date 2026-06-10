@@ -9,5 +9,6 @@ data class MessageEntity(
     val sessionId: Long = 0,
     val role: String,
     val content: String,
+    val imageUri: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )

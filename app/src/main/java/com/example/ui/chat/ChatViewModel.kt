@@ -34,6 +34,7 @@ data class UiMessage(
     val id: String = java.util.UUID.randomUUID().toString(),
     val role: String,
     val content: String,
+    val imageUri: String? = null,
     val isError: Boolean = false
 )
 
@@ -78,7 +79,7 @@ class ChatViewModel(
             chatRepository.getMessagesForSession(sessionId).collect { messages ->
                 _uiState.update { state ->
                     if (state.currentSessionId == sessionId) {
-                         state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content) })
+                         state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content, it.imageUri) })
                     } else state
                 }
             }
@@ -138,9 +139,9 @@ class ChatViewModel(
         }
     }
 
-    fun sendMessage(userText: String) {
+    fun sendMessage(userText: String, imageUri: String? = null) {
         val messageText = userText.trim()
-        if (messageText.isEmpty()) return
+        if (messageText.isEmpty() && imageUri == null) return
 
         _uiState.update { 
             it.copy(
@@ -153,13 +154,15 @@ class ChatViewModel(
             try {
                 var sessionId = _uiState.value.currentSessionId
                 if (sessionId == null) {
-                    val title = if (messageText.length > 20) messageText.substring(0, 20) + "..." else messageText
+                    val title = if (messageText.isNotEmpty()) {
+                         if (messageText.length > 20) messageText.substring(0, 20) + "..." else messageText
+                    } else "Photo Attached"
                     sessionId = chatRepository.createNewSession(title)
                     _uiState.update { it.copy(currentSessionId = sessionId) }
                     selectSession(sessionId) // to start observing messages for the new session
                 }
                 
-                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "user", content = messageText))
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "user", content = messageText, imageUri = imageUri))
                 
                 val apiKey = settingsRepository.apiKey.first()
                 val baseUrl = settingsRepository.baseUrl.first()
