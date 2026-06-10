@@ -144,15 +144,18 @@ fun ChatScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
-    ) { _ ->
+    ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(innerPadding)
+                .imePadding()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
             ) {
+                Spacer(modifier = Modifier.height(56.dp))
             if (uiState.emailContext != null) {
                 Card(
                     modifier = Modifier
@@ -387,7 +390,7 @@ fun ChatScreen(
                             viewModel.clearChat()
                         }
                     )
-                    Divider(color = OutlineDark)
+                    HorizontalDivider(color = OutlineDark)
                     DropdownMenuItem(
                         text = { Text("Settings", color = Color.White) },
                         onClick = {
