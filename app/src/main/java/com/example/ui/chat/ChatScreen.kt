@@ -346,13 +346,18 @@ fun ChatScreen(
             }
         } // Close the Column
 
-        // Floating Menu Button
-        var showMenu by remember { mutableStateOf(false) }
-            Box(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .align(Alignment.TopStart)
-            ) {
+        // Top Navigation Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+                .align(Alignment.TopCenter),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Floating Menu Button
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
                 }
@@ -406,6 +411,61 @@ fun ChatScreen(
                     )
                 }
             }
+
+            // Mode Selector
+            var showModeMenu by remember { mutableStateOf(false) }
+            val currentMode = uiState.mode
+            val modeText = when (currentMode) {
+                ChatMode.THINK -> "Think ▼"
+                ChatMode.THINK_DEEPLY -> "Think Deeply ▼"
+                else -> "Normal ▼"
+            }
+
+            Box {
+                Box(
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                        .clickable { showModeMenu = true }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = modeText,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showModeMenu,
+                    onDismissRequest = { showModeMenu = false },
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Normal", color = Color.White) },
+                        onClick = {
+                            showModeMenu = false
+                            viewModel.setMode(ChatMode.NORMAL)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Think", color = Color.White) },
+                        onClick = {
+                            showModeMenu = false
+                            viewModel.setMode(ChatMode.THINK)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Think Deeply", color = Color.White) },
+                        onClick = {
+                            showModeMenu = false
+                            viewModel.setMode(ChatMode.THINK_DEEPLY)
+                        }
+                    )
+                }
+            }
+        }
         }
     }
 }
