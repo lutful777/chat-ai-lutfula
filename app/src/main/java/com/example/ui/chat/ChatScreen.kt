@@ -209,7 +209,6 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .imePadding()
-                .navigationBarsPadding()
         ) {
             if (uiState.emailContext != null) {
                 Card(
@@ -320,7 +319,7 @@ fun ChatScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
                     .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
                     .border(1.dp, OutlineDark, RoundedCornerShape(24.dp))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -425,8 +424,8 @@ fun MessageBubble(message: UiMessage) {
                 text = message.content,
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
-                fontSize = 14.sp,
-                lineHeight = 20.sp
+                fontSize = 13.sp,
+                lineHeight = 18.sp
             )
         }
     }
