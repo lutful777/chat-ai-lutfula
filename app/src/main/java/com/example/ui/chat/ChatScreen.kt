@@ -148,7 +148,6 @@ fun ChatScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
         ) {
             Column(
                 modifier = Modifier
@@ -287,9 +286,9 @@ fun ChatScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
-                        .border(1.dp, OutlineDark, RoundedCornerShape(24.dp))
+                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                        .border(1.dp, OutlineDark, CircleShape)
                         .padding(start = 8.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
                     contentAlignment = Alignment.CenterStart
                 ) {
