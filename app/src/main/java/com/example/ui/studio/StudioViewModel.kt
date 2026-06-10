@@ -246,12 +246,8 @@ class StudioViewModel(
         } else {
             val stringUri = imageUri.toString()
             val imgStr = if (stringUri.startsWith("http")) {
-                if (imageFormatSetting == "base64") getBase64FromUrl(stringUri) else stringUri
+                getBase64FromUrl(stringUri)
             } else {
-                if (imageFormatSetting == "url") {
-                    _uiState.update { it.copy(isGenerating = false, error = "URL image format requires an online image URL. Local photos should use base64 or multipart.") }
-                    return
-                }
                 getBase64FromUri(imageUri, economyMode)
             }
             
@@ -263,11 +259,7 @@ class StudioViewModel(
             JSONObject().apply {
                 if (prompt.isNotBlank()) put("prompt", prompt)
                 if (model.isNotBlank()) put("model", model)
-                if (imageFormatSetting == "url") {
-                     put("image_url", imgStr)
-                } else {
-                     put("image", imgStr)
-                }
+                put("image", imgStr)
             }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }
 
@@ -422,16 +414,8 @@ class StudioViewModel(
         } else {
             val stringUri = imageUri.toString()
             val imgStr = if (stringUri.startsWith("http")) {
-                if (imageFormatSetting == "base64") {
-                    getBase64FromUrl(stringUri)
-                } else {
-                    stringUri
-                }
+                getBase64FromUrl(stringUri)
             } else {
-                if (imageFormatSetting == "url") {
-                    _uiState.update { it.copy(isGenerating = false, error = "URL image format requires an online image URL. Local photos should use base64 or multipart.") }
-                    return
-                }
                 getBase64FromUri(imageUri, economyMode)
             }
             
@@ -451,11 +435,7 @@ class StudioViewModel(
                     }
                     put("image", imageObj)
                 } else {
-                    if (imageFormatSetting == "url") {
-                        put("image_url", imgStr ?: "")
-                    } else {
-                        put("image", imgStr ?: "")
-                    }
+                    put("image", imgStr ?: "")
                 }
             }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }

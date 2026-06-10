@@ -253,6 +253,15 @@ fun StudioScreen(
                             Icon(Icons.Filled.Image, contentDescription = "Save Image", tint = PrimaryNeon)
                         }
                     }
+                } else if (uiState.selectedImageUri != null && uiState.generatedMediaUrl == null && uiState.generatedVideoUrl == null && (uiState.selectedTab == 1 || uiState.selectedTab == 2)) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AsyncImage(
+                            model = uiState.selectedImageUri,
+                            contentDescription = "Selected Media",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 } else if (uiState.generatedVideoUrl != null && uiState.selectedTab == 2) {
                     // Simulating a video player placeholder
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -287,16 +296,7 @@ fun StudioScreen(
                 ) {
                     Button(
                         onClick = {
-                            val permission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_IMAGES)
-                            } else {
-                                androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE)
-                            }
-                            if (permission == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                galleryLauncher.launch("image/*")
-                            } else {
-                                showPhotoPermissionDialog = true
-                            }
+                            galleryLauncher.launch("image/*")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                         shape = RoundedCornerShape(16.dp),
