@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -430,13 +429,6 @@ fun ChatScreen(
                         onClick = {
                             showMenu = false
                             showHistoryDialog = true
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Clear Current Chat", color = Color.White) },
-                        onClick = {
-                            showMenu = false
-                            viewModel.clearChat()
                         }
                     )
                     HorizontalDivider(color = OutlineDark)

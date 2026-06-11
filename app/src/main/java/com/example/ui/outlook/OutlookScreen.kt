@@ -117,9 +117,9 @@ fun OutlookScreen(
                             fontSize = 14.sp
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        val activity = androidx.compose.ui.platform.LocalContext.current as android.app.Activity
+                        val activity = androidx.activity.compose.LocalActivity.current
                         Button(
-                            onClick = { viewModel.signInMicrosoft(activity) },
+                            onClick = { activity?.let { viewModel.signInMicrosoft(it) } },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                             shape = RoundedCornerShape(24.dp)
                         ) {

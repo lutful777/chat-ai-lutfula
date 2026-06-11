@@ -116,16 +116,6 @@ class ChatViewModel(
         _uiState.update { it.copy(emailContext = null, suggestedTranslationAction = null) }
     }
 
-    fun clearChat() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val sessionId = _uiState.value.currentSessionId
-            if (sessionId != null) {
-                chatRepository.deleteSession(sessionId)
-            }
-            _uiState.update { it.copy(error = null, currentSessionId = null, messages = emptyList()) }
-        }
-    }
-
     private fun shouldUseRealtimeSearch(messageText: String): Boolean {
         val keywords = listOf(
             "cari", "search", "carikan", "cek", "berita terbaru", "terbaru", 

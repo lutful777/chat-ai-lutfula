@@ -16,8 +16,4 @@ class ChatRepository(private val chatDao: ChatDao) {
     suspend fun insertMessage(message: MessageEntity) = chatDao.insertMessage(message)
 
     suspend fun clearHistoryForSession(sessionId: Long) = chatDao.clearHistoryForSession(sessionId)
-    suspend fun deleteSession(sessionId: Long) {
-        chatDao.deleteSession(sessionId)
-        chatDao.clearHistoryForSession(sessionId)
-    }
 }

@@ -70,6 +70,10 @@ secrets {
   defaultPropertiesFileName = ".env.example"
 }
 
+tasks.withType<Test> {
+    systemProperty("java.awt.headless", "true")
+}
+
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
