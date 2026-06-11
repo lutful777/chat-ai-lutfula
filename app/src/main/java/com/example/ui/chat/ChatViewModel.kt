@@ -160,6 +160,10 @@ class ChatViewModel(
             settingsRepository.saveMemoryEnabled(true)
             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is now enabled."))
             return true
+        } else if (textLower == "cek memory cloud" || textLower == "test memory cloud" || textLower == "cek appwrite" || textLower == "appwrite test") {
+            val result = memoryRepository.testCloudMemory()
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = result))
+            return true
         }
 
         if (!memoryEnabled && (textLower.startsWith("ingat") || textLower.startsWith("simpan") || textLower.startsWith("remember") || textLower == "hapus memory" || textLower == "lihat memory" || textLower.startsWith("lupakan"))) {
