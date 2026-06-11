@@ -16,14 +16,19 @@ class AppwriteMemoryRepository(
         val endpoint: String,
         val projectId: String,
         val databaseId: String,
-        val collectionId: String
+        val tableId: String
     ) {
-        val documentsUrl: String
-            get() = "$endpoint/databases/${encode(databaseId)}/collections/${encode(collectionId)}/documents"
+        // New Appwrite TablesDB API. This matches the console UI labels: Tables, Rows, Columns.
+        val rowsUrl: String
+            get() = "$endpoint/tablesdb/${encode(databaseId)}/tables/${encode(tableId)}/rows"
+
+        // Legacy Appwrite Databases API fallback for older projects.
+        val legacyDocumentsUrl: String
+            get() = "$endpoint/databases/${encode(databaseId)}/collections/${encode(tableId)}/documents"
     }
 
     private data class RemoteMemory(
-        val documentId: String,
+        val rowId: String,
         val memory: MemoryEntity
     )
 
@@ -46,23 +51,19 @@ class AppwriteMemoryRepository(
                 .put("source", memory.source)
                 .put("isPinned", memory.isPinned)
 
-            val payload = JSONObject()
+            val rowsPayload = JSONObject()
+                .put("rowId", "unique()")
+                .put("data", data)
+
+            val rowsCreated = postJson(config.rowsUrl, rowsPayload, config)
+            if (rowsCreated) return
+
+            // Fallback for older Appwrite projects that still use documents.
+            val documentsPayload = JSONObject()
                 .put("documentId", "unique()")
                 .put("data", data)
 
-            val body = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
-            val request = Request.Builder()
-                .url(config.documentsUrl)
-                .addAppwriteHeaders(config)
-                .post(body)
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    // Keep local memory working even when Appwrite rejects the write.
-                    return
-                }
-            }
+            postJson(config.legacyDocumentsUrl, documentsPayload, config)
         } catch (_: Exception) {
             // Cloud memory must never break local chat memory.
         }
@@ -71,7 +72,7 @@ class AppwriteMemoryRepository(
     suspend fun deleteAllMemories() {
         try {
             getRemoteMemories().forEach { remote ->
-                deleteDocument(remote.documentId)
+                deleteRow(remote.rowId)
             }
         } catch (_: Exception) {
             // Ignore cloud delete failures so local delete can still complete.
@@ -85,7 +86,7 @@ class AppwriteMemoryRepository(
         try {
             getRemoteMemories()
                 .filter { it.memory.content.lowercase().contains(normalizedQuery) }
-                .forEach { remote -> deleteDocument(remote.documentId) }
+                .forEach { remote -> deleteRow(remote.rowId) }
         } catch (_: Exception) {
             // Ignore cloud delete failures so local delete can still complete.
         }
@@ -93,34 +94,58 @@ class AppwriteMemoryRepository(
 
     private suspend fun getRemoteMemories(): List<RemoteMemory> {
         val config = getConfig() ?: return emptyList()
+
+        val rowsResult = getRemoteMemoriesFromUrl(
+            url = "${config.rowsUrl}?limit=100",
+            arrayKey = "rows",
+            idKey = "\$id",
+            source = "appwrite"
+        )
+        if (rowsResult != null) return rowsResult
+
+        return getRemoteMemoriesFromUrl(
+            url = "${config.legacyDocumentsUrl}?limit=100",
+            arrayKey = "documents",
+            idKey = "\$id",
+            source = "appwrite"
+        ).orEmpty()
+    }
+
+    private suspend fun getRemoteMemoriesFromUrl(
+        url: String,
+        arrayKey: String,
+        idKey: String,
+        source: String
+    ): List<RemoteMemory>? {
+        val config = getConfig() ?: return emptyList()
         val request = Request.Builder()
-            .url("${config.documentsUrl}?limit=100")
+            .url(url)
             .addAppwriteHeaders(config)
             .get()
             .build()
 
         okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
+            if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) return emptyList()
 
-            val documents = JSONObject(body).optJSONArray("documents") ?: return emptyList()
+            val rows = JSONObject(body).optJSONArray(arrayKey) ?: return emptyList()
             return buildList {
-                for (index in 0 until documents.length()) {
-                    val document = documents.optJSONObject(index) ?: continue
-                    val content = document.optString("content", "").trim()
+                for (index in 0 until rows.length()) {
+                    val row = rows.optJSONObject(index) ?: continue
+                    val content = row.optString("content", "").trim()
                     if (content.isBlank()) continue
 
                     add(
                         RemoteMemory(
-                            documentId = document.optString("\$id", ""),
+                            rowId = row.optString(idKey, ""),
                             memory = MemoryEntity(
                                 content = content,
-                                category = document.optString("category", "manual"),
-                                createdAt = document.optLong("createdAt", System.currentTimeMillis()),
-                                updatedAt = document.optLong("updatedAt", System.currentTimeMillis()),
-                                source = document.optString("source", "appwrite"),
-                                isPinned = document.optBoolean("isPinned", false)
+                                category = row.optString("category", "manual"),
+                                createdAt = row.optLong("createdAt", System.currentTimeMillis()),
+                                updatedAt = row.optLong("updatedAt", System.currentTimeMillis()),
+                                source = row.optString("source", source),
+                                isPinned = row.optBoolean("isPinned", false)
                             )
                         )
                     )
@@ -129,16 +154,39 @@ class AppwriteMemoryRepository(
         }
     }
 
-    private suspend fun deleteDocument(documentId: String) {
-        if (documentId.isBlank()) return
+    private suspend fun deleteRow(rowId: String) {
+        if (rowId.isBlank()) return
         val config = getConfig() ?: return
+
+        val deletedFromRows = deleteUrl("${config.rowsUrl}/${encode(rowId)}", config)
+        if (deletedFromRows) return
+
+        deleteUrl("${config.legacyDocumentsUrl}/${encode(rowId)}", config)
+    }
+
+    private fun postJson(url: String, payload: JSONObject, config: Config): Boolean {
+        val body = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
         val request = Request.Builder()
-            .url("${config.documentsUrl}/${encode(documentId)}")
+            .url(url)
+            .addAppwriteHeaders(config)
+            .post(body)
+            .build()
+
+        okHttpClient.newCall(request).execute().use { response ->
+            return response.isSuccessful
+        }
+    }
+
+    private fun deleteUrl(url: String, config: Config): Boolean {
+        val request = Request.Builder()
+            .url(url)
             .addAppwriteHeaders(config)
             .delete()
             .build()
 
-        okHttpClient.newCall(request).execute().use { /* close response */ }
+        okHttpClient.newCall(request).execute().use { response ->
+            return response.isSuccessful
+        }
     }
 
     private suspend fun getConfig(): Config? {
@@ -147,9 +195,9 @@ class AppwriteMemoryRepository(
         val endpoint = settingsRepository.appwriteEndpoint.first().trim().trimEnd('/')
         val projectId = settingsRepository.appwriteProjectId.first().trim()
         val databaseId = settingsRepository.appwriteDatabaseId.first().trim()
-        val collectionId = settingsRepository.appwriteMemoryCollectionId.first().trim()
+        val tableId = settingsRepository.appwriteMemoryCollectionId.first().trim()
 
-        if (endpoint.isBlank() || projectId.isBlank() || databaseId.isBlank() || collectionId.isBlank()) {
+        if (endpoint.isBlank() || projectId.isBlank() || databaseId.isBlank() || tableId.isBlank()) {
             return null
         }
 
@@ -157,7 +205,7 @@ class AppwriteMemoryRepository(
             endpoint = endpoint,
             projectId = projectId,
             databaseId = databaseId,
-            collectionId = collectionId
+            tableId = tableId
         )
     }
 
