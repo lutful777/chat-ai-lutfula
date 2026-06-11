@@ -29,6 +29,11 @@ class MemoryRepository(
         appwriteMemoryRepository?.saveMemory(memory)
     }
 
+    suspend fun testCloudMemory(): String {
+        return appwriteMemoryRepository?.testCloudMemory()
+            ?: "Appwrite cloud memory is not connected."
+    }
+
     suspend fun deleteMemoryById(id: Int) {
         memoryDao.deleteMemoryById(id)
     }
