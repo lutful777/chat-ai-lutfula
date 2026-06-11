@@ -52,6 +52,7 @@ class SettingsRepository(private val context: Context) {
     private val PHOTO_VIDEO_DURATION = stringPreferencesKey("photo_video_duration")
     
     private val ECONOMY_MODE = booleanPreferencesKey("economy_mode")
+    private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
 
     val textProvider: Flow<String> = context.dataStore.data.map { it[TEXT_PROVIDER] ?: "" }
     val apiKey: Flow<String> = context.dataStore.data.map { it[API_KEY] ?: "" }
@@ -87,6 +88,7 @@ class SettingsRepository(private val context: Context) {
     val photoVideoDuration: Flow<String> = context.dataStore.data.map { it[PHOTO_VIDEO_DURATION] ?: "5" }
 
     val economyMode: Flow<Boolean> = context.dataStore.data.map { it[ECONOMY_MODE] ?: true }
+    val memoryEnabled: Flow<Boolean> = context.dataStore.data.map { it[MEMORY_ENABLED] ?: true }
 
     val assistantLanguagePreference: Flow<String> = context.dataStore.data.map { it[ASSISTANT_LANGUAGE_PREFERENCE] ?: "id" }
 
@@ -142,6 +144,12 @@ class SettingsRepository(private val context: Context) {
     suspend fun saveEconomyMode(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ECONOMY_MODE] = enabled
+        }
+    }
+
+    suspend fun saveMemoryEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[MEMORY_ENABLED] = enabled
         }
     }
 }

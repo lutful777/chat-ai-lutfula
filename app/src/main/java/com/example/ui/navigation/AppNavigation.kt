@@ -47,6 +47,7 @@ fun AppNavigation() {
         factory = ChatViewModel.Factory(
             settingsRepository,
             chatRepository,
+            AppContainer.getMemoryRepository(context),
             AppContainer.okHttpClient,
             AppContainer.moshi
         )

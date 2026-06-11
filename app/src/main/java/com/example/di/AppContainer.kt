@@ -16,6 +16,7 @@ object AppContainer {
     private var _settingsRepository: SettingsRepository? = null
     private var _database: AppDatabase? = null
     private var _chatRepository: ChatRepository? = null
+    private var _memoryRepository: com.example.data.MemoryRepository? = null
     private var _microsoftAuthService: MicrosoftAuthService? = null
     private var _microsoftGraphRepository: MicrosoftGraphRepository? = null
 
@@ -57,6 +58,13 @@ object AppContainer {
             _chatRepository = ChatRepository(getDatabase(context).chatDao())
         }
         return _chatRepository!!
+    }
+
+    fun getMemoryRepository(context: Context): com.example.data.MemoryRepository {
+        if (_memoryRepository == null) {
+            _memoryRepository = com.example.data.MemoryRepository(getDatabase(context).memoryDao())
+        }
+        return _memoryRepository!!
     }
 
     val moshi: Moshi by lazy {

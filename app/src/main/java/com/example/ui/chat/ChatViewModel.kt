@@ -53,6 +53,7 @@ data class ChatUiState(
 class ChatViewModel(
     private val settingsRepository: SettingsRepository,
     private val chatRepository: ChatRepository,
+    private val memoryRepository: com.example.data.MemoryRepository,
     private val okHttpClient: OkHttpClient,
     private val moshi: Moshi
 ) : ViewModel() {
@@ -140,6 +141,83 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun handleMemoryCommand(messageText: String, sessionId: Long): Boolean {
+        val textLower = messageText.trim().lowercase()
+        val memoryEnabled = settingsRepository.memoryEnabled.first()
+        
+        if (textLower == "memory off") {
+            settingsRepository.saveMemoryEnabled(false)
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is now disabled."))
+            return true
+        } else if (textLower == "memory on") {
+            settingsRepository.saveMemoryEnabled(true)
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is now enabled."))
+            return true
+        }
+
+        if (!memoryEnabled && (textLower.startsWith("ingat") || textLower.startsWith("simpan") || textLower.startsWith("remember") || textLower == "hapus memory" || textLower == "lihat memory" || textLower.startsWith("lupakan"))) {
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is disabled. Say 'memory on' to enable it."))
+            return true
+        }
+
+        if (textLower == "hapus memory") {
+            memoryRepository.deleteAllMemories()
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "All memories have been deleted."))
+            return true
+        } else if (textLower == "lihat memory") {
+            val memories = memoryRepository.getAllMemories()
+            if (memories.isEmpty()) {
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is empty."))
+            } else {
+                val listStr = memories.joinToString("\n") { "- ${it.content}" }
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Here are my memories:\n$listStr"))
+            }
+            return true
+        }
+
+        val savePrefixes = listOf("ingat:", "ingat ini:", "simpan dimemory anda:", "remember:")
+        for (prefix in savePrefixes) {
+            if (textLower.startsWith(prefix)) {
+                val content = messageText.substring(prefix.length).trim()
+                return saveMemoryIfSafe(content, sessionId, true)
+            }
+        }
+        
+        val deletePrefixes = listOf("lupakan:")
+        for (prefix in deletePrefixes) {
+            if (textLower.startsWith(prefix)) {
+                val content = messageText.substring(prefix.length).trim()
+                memoryRepository.deleteMemoryByContent(content)
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "I have forgotten that."))
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private suspend fun saveMemoryIfSafe(content: String, sessionId: Long, isExplicit: Boolean): Boolean {
+        val lower = content.lowercase()
+        val criticalSecrets = listOf("password", "api key", "apikey", "token", "secret", "address", "alamat", "phone", "telepon", "bank", "payment", "credit card")
+        
+        if (criticalSecrets.any { lower.contains(it) }) {
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ I am not allowed to remember sensitive data like API keys, passwords, addresses, and banking info."))
+            return true
+        }
+
+        if (!isExplicit) {
+            val familyWords = listOf("mama", "ibu", "mother", "ayah", "bapak", "father", "sibling", "siblings", "wife", "husband", "child", "children")
+            if (familyWords.any { lower.contains(it) }) {
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ I am not allowed to automatically save family identity information."))
+                return true
+            }
+        }
+
+        memoryRepository.insertMemory(content = content, category = if (isExplicit) "manual" else "auto")
+        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Got it! I will remember this."))
+        return true
+    }
+
     fun sendMessage(userText: String, imageUri: String? = null) {
         val messageText = userText.trim()
         if (messageText.isEmpty() && imageUri == null) return
@@ -167,12 +245,18 @@ class ChatViewModel(
                 
                 chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "user", content = messageText, imageUri = imageUri))
                 
+                if (handleMemoryCommand(messageText, sessionId)) {
+                    _uiState.update { it.copy(isLoading = false) }
+                    return@launch
+                }
+                
                 val apiKey = settingsRepository.apiKey.first()
                 val baseUrl = settingsRepository.baseUrl.first()
                 val path = settingsRepository.textPath.first()
                 val modelName = settingsRepository.model.first()
                 val firecrawlKey = settingsRepository.firecrawlApiKey.first()
                 val langPref = settingsRepository.assistantLanguagePreference.first()
+                val memoryEnabled = settingsRepository.memoryEnabled.first()
 
                 if (apiKey.isBlank() || baseUrl.isBlank() || modelName.isBlank()) {
                     _uiState.update {
@@ -244,6 +328,28 @@ class ChatViewModel(
                 
                 if (langPref == "id") {
                     systemPrompt += "\n\nAlways respond in Bahasa Indonesia. Use clear, simple Indonesian unless the user asks for another language."
+                }
+                
+                if (memoryEnabled) {
+                    val allMemories = memoryRepository.getAllMemories()
+                    val queryWords = messageText.lowercase().split("\\s+".toRegex()).filter { it.length > 2 }
+                    
+                    val scoredMemories = allMemories.map { mem ->
+                        val memLower = mem.content.lowercase()
+                        val score = queryWords.count { memLower.contains(it) }
+                        mem to score
+                    }.sortedByDescending { it.second }
+                    
+                    val relevantMemories = if (scoredMemories.any { it.second > 0 }) {
+                         scoredMemories.filter { it.second > 0 }.take(10).map { it.first }
+                    } else {
+                         allMemories.take(5)
+                    }
+
+                    if (relevantMemories.isNotEmpty()) {
+                        systemPrompt += "\n\nUser memory:\n" + relevantMemories.joinToString("\n") { "- ${it.content}" } + 
+                                        "\nUse these memories only when relevant. Do not mention memory unless the user asks."
+                    }
                 }
                 
                 if (searchContext.isNotEmpty()) {
@@ -354,13 +460,14 @@ class ChatViewModel(
     class Factory(
         private val settingsRepository: SettingsRepository,
         private val chatRepository: ChatRepository,
+        private val memoryRepository: com.example.data.MemoryRepository,
         private val okHttpClient: OkHttpClient,
         private val moshi: Moshi
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
-                return ChatViewModel(settingsRepository, chatRepository, okHttpClient, moshi) as T
+                return ChatViewModel(settingsRepository, chatRepository, memoryRepository, okHttpClient, moshi) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }
