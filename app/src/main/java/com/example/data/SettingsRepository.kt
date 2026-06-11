@@ -3,11 +3,10 @@ package com.example.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.BuildConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -51,16 +50,9 @@ class SettingsRepository(private val context: Context) {
     private val PHOTO_VIDEO_FORMAT = stringPreferencesKey("photo_video_format")
     private val PHOTO_VIDEO_IMAGE_FORMAT = stringPreferencesKey("photo_video_image_format")
     private val PHOTO_VIDEO_DURATION = stringPreferencesKey("photo_video_duration")
-
+    
     private val ECONOMY_MODE = booleanPreferencesKey("economy_mode")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
-
-    // Appwrite Cloud Memory Settings
-    private val APPWRITE_MEMORY_ENABLED = booleanPreferencesKey("appwrite_memory_enabled")
-    private val APPWRITE_ENDPOINT = stringPreferencesKey("appwrite_endpoint")
-    private val APPWRITE_PROJECT_ID = stringPreferencesKey("appwrite_project_id")
-    private val APPWRITE_DATABASE_ID = stringPreferencesKey("appwrite_database_id")
-    private val APPWRITE_MEMORY_COLLECTION_ID = stringPreferencesKey("appwrite_memory_collection_id")
 
     val textProvider: Flow<String> = context.dataStore.data.map { it[TEXT_PROVIDER] ?: "" }
     val apiKey: Flow<String> = context.dataStore.data.map { it[API_KEY] ?: "" }
@@ -97,22 +89,6 @@ class SettingsRepository(private val context: Context) {
 
     val economyMode: Flow<Boolean> = context.dataStore.data.map { it[ECONOMY_MODE] ?: true }
     val memoryEnabled: Flow<Boolean> = context.dataStore.data.map { it[MEMORY_ENABLED] ?: true }
-
-    val appwriteMemoryEnabled: Flow<Boolean> = context.dataStore.data.map {
-        it[APPWRITE_MEMORY_ENABLED] ?: BuildConfig.APPWRITE_MEMORY_ENABLED.equals("true", ignoreCase = true)
-    }
-    val appwriteEndpoint: Flow<String> = context.dataStore.data.map {
-        it[APPWRITE_ENDPOINT] ?: cleanBuildConfigValue(BuildConfig.APPWRITE_ENDPOINT).ifBlank { "https://cloud.appwrite.io/v1" }
-    }
-    val appwriteProjectId: Flow<String> = context.dataStore.data.map {
-        it[APPWRITE_PROJECT_ID] ?: cleanBuildConfigValue(BuildConfig.APPWRITE_PROJECT_ID)
-    }
-    val appwriteDatabaseId: Flow<String> = context.dataStore.data.map {
-        it[APPWRITE_DATABASE_ID] ?: cleanBuildConfigValue(BuildConfig.APPWRITE_DATABASE_ID)
-    }
-    val appwriteMemoryCollectionId: Flow<String> = context.dataStore.data.map {
-        it[APPWRITE_MEMORY_COLLECTION_ID] ?: cleanBuildConfigValue(BuildConfig.APPWRITE_MEMORY_COLLECTION_ID).ifBlank { "memories" }
-    }
 
     val assistantLanguagePreference: Flow<String> = context.dataStore.data.map { it[ASSISTANT_LANGUAGE_PREFERENCE] ?: "id" }
 
@@ -175,32 +151,5 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[MEMORY_ENABLED] = enabled
         }
-    }
-
-    suspend fun saveAppwriteMemorySettings(
-        enabled: Boolean,
-        endpoint: String,
-        projectId: String,
-        databaseId: String,
-        collectionId: String
-    ) {
-        context.dataStore.edit { prefs ->
-            prefs[APPWRITE_MEMORY_ENABLED] = enabled
-            prefs[APPWRITE_ENDPOINT] = endpoint
-            prefs[APPWRITE_PROJECT_ID] = projectId
-            prefs[APPWRITE_DATABASE_ID] = databaseId
-            prefs[APPWRITE_MEMORY_COLLECTION_ID] = collectionId
-        }
-    }
-
-    suspend fun saveAppwriteMemoryEnabled(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[APPWRITE_MEMORY_ENABLED] = enabled
-        }
-    }
-
-    private fun cleanBuildConfigValue(value: String): String {
-        val trimmed = value.trim()
-        return if (trimmed.isBlank() || trimmed.startsWith("YOUR_")) "" else trimmed
     }
 }

@@ -21,6 +21,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import com.example.data.AppGuide
 import com.example.data.ChatSessionEntity
 import com.example.data.ChatRepository
 import com.example.data.MessageEntity
@@ -159,10 +160,6 @@ class ChatViewModel(
         } else if (textLower == "memory on") {
             settingsRepository.saveMemoryEnabled(true)
             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is now enabled."))
-            return true
-        } else if (textLower == "cek memory cloud" || textLower == "test memory cloud" || textLower == "cek appwrite" || textLower == "appwrite test") {
-            val result = memoryRepository.testCloudMemory()
-            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = result))
             return true
         }
 
@@ -340,6 +337,8 @@ class ChatViewModel(
                 if (langPref == "id") {
                     systemPrompt += "\n\nAlways respond in Bahasa Indonesia. Use clear, simple Indonesian unless the user asks for another language."
                 }
+                
+                systemPrompt += "\n\n" + AppGuide.TEXT
                 
                 if (memoryEnabled) {
                     val allMemories = memoryRepository.getAllMemories()
