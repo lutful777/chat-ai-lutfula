@@ -18,11 +18,9 @@ class AppwriteMemoryRepository(
         val databaseId: String,
         val tableId: String
     ) {
-        // New Appwrite TablesDB API. This matches the console UI labels: Tables, Rows, Columns.
         val rowsUrl: String
             get() = "$endpoint/tablesdb/${encode(databaseId)}/tables/${encode(tableId)}/rows"
 
-        // Legacy Appwrite Databases API fallback for older projects.
         val legacyDocumentsUrl: String
             get() = "$endpoint/databases/${encode(databaseId)}/collections/${encode(tableId)}/documents"
     }
@@ -30,6 +28,12 @@ class AppwriteMemoryRepository(
     private data class RemoteMemory(
         val rowId: String,
         val memory: MemoryEntity
+    )
+
+    private data class HttpResult(
+        val success: Boolean,
+        val code: Int,
+        val body: String
     )
 
     suspend fun getAllMemories(): List<MemoryEntity> {
@@ -43,22 +47,15 @@ class AppwriteMemoryRepository(
     suspend fun saveMemory(memory: MemoryEntity) {
         try {
             val config = getConfig() ?: return
-            val data = JSONObject()
-                .put("content", memory.content)
-                .put("category", memory.category)
-                .put("createdAt", memory.createdAt)
-                .put("updatedAt", memory.updatedAt)
-                .put("source", memory.source)
-                .put("isPinned", memory.isPinned)
+            val data = createDataJson(memory)
 
             val rowsPayload = JSONObject()
                 .put("rowId", "unique()")
                 .put("data", data)
 
-            val rowsCreated = postJson(config.rowsUrl, rowsPayload, config)
+            val rowsCreated = postJson(config.rowsUrl, rowsPayload, config).success
             if (rowsCreated) return
 
-            // Fallback for older Appwrite projects that still use documents.
             val documentsPayload = JSONObject()
                 .put("documentId", "unique()")
                 .put("data", data)
@@ -66,6 +63,38 @@ class AppwriteMemoryRepository(
             postJson(config.legacyDocumentsUrl, documentsPayload, config)
         } catch (_: Exception) {
             // Cloud memory must never break local chat memory.
+        }
+    }
+
+    suspend fun testCloudMemory(): String {
+        return try {
+            val config = getConfig() ?: return "Appwrite cloud memory is OFF or incomplete. Check APPWRITE_MEMORY_ENABLED, APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_DATABASE_ID, and APPWRITE_MEMORY_COLLECTION_ID."
+            val testMemory = MemoryEntity(
+                content = "cloud memory diagnostic ${System.currentTimeMillis()}",
+                category = "debug",
+                source = "diagnostic"
+            )
+            val data = createDataJson(testMemory)
+
+            val rowsPayload = JSONObject()
+                .put("rowId", "unique()")
+                .put("data", data)
+            val rowsResult = postJson(config.rowsUrl, rowsPayload, config)
+            if (rowsResult.success) {
+                return "✅ Appwrite TablesDB memory OK. Endpoint=${config.endpoint}, Database=${config.databaseId}, Table=${config.tableId}. Refresh Appwrite Rows."
+            }
+
+            val documentsPayload = JSONObject()
+                .put("documentId", "unique()")
+                .put("data", data)
+            val legacyResult = postJson(config.legacyDocumentsUrl, documentsPayload, config)
+            if (legacyResult.success) {
+                return "✅ Appwrite legacy database memory OK. Endpoint=${config.endpoint}, Database=${config.databaseId}, Collection=${config.tableId}. Refresh Appwrite Rows/Documents."
+            }
+
+            "❌ Appwrite cloud memory failed. TablesDB HTTP ${rowsResult.code}: ${rowsResult.body.take(220)} | Legacy HTTP ${legacyResult.code}: ${legacyResult.body.take(220)}"
+        } catch (e: Exception) {
+            "❌ Appwrite cloud memory error: ${e.javaClass.simpleName}: ${e.message.orEmpty().take(220)}"
         }
     }
 
@@ -164,7 +193,17 @@ class AppwriteMemoryRepository(
         deleteUrl("${config.legacyDocumentsUrl}/${encode(rowId)}", config)
     }
 
-    private fun postJson(url: String, payload: JSONObject, config: Config): Boolean {
+    private fun createDataJson(memory: MemoryEntity): JSONObject {
+        return JSONObject()
+            .put("content", memory.content)
+            .put("category", memory.category)
+            .put("createdAt", memory.createdAt)
+            .put("updatedAt", memory.updatedAt)
+            .put("source", memory.source)
+            .put("isPinned", memory.isPinned)
+    }
+
+    private fun postJson(url: String, payload: JSONObject, config: Config): HttpResult {
         val body = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
         val request = Request.Builder()
             .url(url)
@@ -173,7 +212,11 @@ class AppwriteMemoryRepository(
             .build()
 
         okHttpClient.newCall(request).execute().use { response ->
-            return response.isSuccessful
+            return HttpResult(
+                success = response.isSuccessful,
+                code = response.code,
+                body = response.body?.string().orEmpty()
+            )
         }
     }
 
