@@ -93,6 +93,23 @@ class ChatViewModel(
         messageJob?.cancel()
     }
 
+    fun deleteSession(sessionId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            chatRepository.deleteSession(sessionId)
+            
+            // If the deleted session is the currently active one
+            if (_uiState.value.currentSessionId == sessionId) {
+                // Find remaining sessions, excluding the deleted one
+                val remainingSessions = _uiState.value.sessions.filter { it.id != sessionId }
+                if (remainingSessions.isNotEmpty()) {
+                    selectSession(remainingSessions.first().id)
+                } else {
+                    createNewSession()
+                }
+            }
+        }
+    }
+
     fun setMode(mode: ChatMode) {
         _uiState.update { it.copy(mode = mode) }
     }

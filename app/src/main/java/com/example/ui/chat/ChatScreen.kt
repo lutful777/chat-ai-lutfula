@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Menu
@@ -70,6 +71,7 @@ fun ChatScreen(
     )
     val listState = rememberLazyListState()
     var showHistoryDialog by remember { mutableStateOf(false) }
+    var sessionToDelete by remember { mutableStateOf<Long?>(null) }
     
     val context = androidx.compose.ui.platform.LocalContext.current
     var showMicPermissionDialog by remember { mutableStateOf(false) }
@@ -113,6 +115,26 @@ fun ChatScreen(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     }
+    
+    if (sessionToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { sessionToDelete = null },
+            title = { Text("Delete Chat", color = Color.White) },
+            text = { Text("Delete this chat history?", color = Color.White) },
+            confirmButton = {
+                TextButton(onClick = { 
+                    viewModel.deleteSession(sessionToDelete!!)
+                    sessionToDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionToDelete = null }) { Text("Cancel", color = Color.Gray) }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            titleContentColor = Color.White,
+            textContentColor = Color.White
+        )
+    }
 
     if (showHistoryDialog) {
         AlertDialog(
@@ -134,6 +156,12 @@ fun ChatScreen(
                             Icon(Icons.Filled.ChatBubbleOutline, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(session.title, color = Color.White, modifier = Modifier.weight(1f))
+                            IconButton(
+                                onClick = { sessionToDelete = session.id },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Delete this chat history", tint = Color.Gray, modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                     if (uiState.sessions.isEmpty()) {
