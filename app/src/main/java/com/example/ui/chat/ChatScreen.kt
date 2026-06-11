@@ -90,10 +90,10 @@ fun ChatScreen(
     val imeBottom = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)
 
     LaunchedEffect(lastMessageId, uiState.isLoading, imeBottom) {
-        val totalItems = uiState.messages.size + if (uiState.isLoading) 1 else 0
-        if (totalItems > 0) {
-            kotlinx.coroutines.delay(150)
-            listState.animateScrollToItem(totalItems - 1)
+        kotlinx.coroutines.delay(150)
+        val lastIndex = listState.layoutInfo.totalItemsCount - 1
+        if (lastIndex >= 0) {
+            listState.animateScrollToItem(lastIndex)
         }
     }
 
@@ -271,6 +271,10 @@ fun ChatScreen(
                             }
                         }
                     }
+                    
+                    item(key = "bottom_anchor") {
+                        Spacer(modifier = Modifier.height(1.dp))
+                    }
                 }
 
                 val showScrollToBottom by remember {
@@ -282,9 +286,10 @@ fun ChatScreen(
                     IconButton(
                         onClick = {
                             scope.launch {
-                                val target = uiState.messages.size + (if (uiState.isLoading) 1 else 0) - 1
-                                if (target >= 0) {
-                                    listState.animateScrollToItem(target)
+                                kotlinx.coroutines.delay(50)
+                                val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                                if (lastIndex >= 0) {
+                                    listState.animateScrollToItem(lastIndex)
                                 }
                             }
                         },
