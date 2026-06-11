@@ -86,14 +86,14 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(uiState.messages.size, uiState.isLoading) {
+    val lastMessageId = uiState.messages.lastOrNull()?.id
+    val imeBottom = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)
+
+    LaunchedEffect(lastMessageId, uiState.isLoading, imeBottom) {
         val totalItems = uiState.messages.size + if (uiState.isLoading) 1 else 0
         if (totalItems > 0) {
-            val atBottom = !listState.canScrollForward
-            if (atBottom || uiState.isLoading) {
-                kotlinx.coroutines.delay(100)
-                listState.animateScrollToItem(totalItems - 1)
-            }
+            kotlinx.coroutines.delay(150)
+            listState.animateScrollToItem(totalItems - 1)
         }
     }
 
