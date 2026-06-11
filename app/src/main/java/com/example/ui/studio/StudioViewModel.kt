@@ -585,7 +585,8 @@ class StudioViewModel(
                 if (vidUrl != null) {
                     _uiState.update { it.copy(isGenerating = false, generatedVideoUrl = vidUrl, videoStatus = null) }
                 } else {
-                    _uiState.update { it.copy(isGenerating = false, error = "Could not find video URL in result.", videoStatus = null) }
+                    val truncatedBody = if (body.length > 500) body.substring(0, 500) + "..." else body
+                    _uiState.update { it.copy(isGenerating = false, error = "Could not find video URL in result. Provider output: $truncatedBody", videoStatus = null) }
                 }
             } else {
                  _uiState.update { it.copy(isGenerating = false, error = "Failed to fetch result: ${response.code}", videoStatus = null) }
@@ -623,9 +624,18 @@ class StudioViewModel(
     private fun extractVideoUrl(jsonStr: String): String? {
         return try {
             val obj = JSONObject(jsonStr)
+            
+            if (obj.has("download_url") && !obj.isNull("download_url")) return obj.getString("download_url")
+            if (obj.has("video") && !obj.isNull("video")) {
+                val v = obj.get("video")
+                if (v is String) return v
+                if (v is JSONObject && v.has("url")) return v.getString("url")
+            }
             if (obj.has("assets") && !obj.isNull("assets")) {
                 val assets = obj.getJSONObject("assets")
                 if (assets.has("video")) return assets.getString("video")
+                if (assets.has("url")) return assets.getString("url")
+                if (assets.has("video_url")) return assets.getString("video_url")
             }
             if (obj.has("output") && !obj.isNull("output")) {
                 val out = obj.get("output")
@@ -639,26 +649,68 @@ class StudioViewModel(
                 val data = obj.getJSONArray("data")
                 if (data.length() > 0) {
                     val first = data.getJSONObject(0)
+                    if (first.has("video_url")) return first.getString("video_url")
+                    if (first.has("download_url")) return first.getString("download_url")
                     if (first.has("url")) return first.getString("url")
+                    if (first.has("asset") && !first.isNull("asset")) {
+                        val a = first.getJSONObject("asset")
+                        if (a.has("url")) return a.getString("url")
+                    }
+                    if (first.has("video") && !first.isNull("video")) {
+                        val v = first.getJSONObject("video")
+                        if (v.has("url")) return v.getString("url")
+                    }
                 }
             }
 
             if (obj.has("result") && !obj.isNull("result")) {
                 val res = obj.getJSONObject("result")
+                if (res.has("video") && !res.isNull("video")) {
+                    val v = res.get("video")
+                    if (v is String) return v
+                    if (v is JSONObject && v.has("url")) return v.getString("url")
+                }
                 if (res.has("video_url")) return res.getString("video_url")
                 if (res.has("url")) return res.getString("url")
+                if (res.has("assets") && !res.isNull("assets")) {
+                    val ass = res.getJSONObject("assets")
+                    if (ass.has("video")) return ass.getString("video")
+                }
             }
 
             if (obj.has("response") && !obj.isNull("response")) {
                 val resp = obj.getJSONObject("response")
                 if (resp.has("video_url")) return resp.getString("video_url")
             }
+            if (obj.has("asset") && !obj.isNull("asset")) {
+                val a = obj.getJSONObject("asset")
+                if (a.has("url")) return a.getString("url")
+            }
 
             val url = extractMediaUrl(jsonStr)
             if (url != null && url.endsWith(".mp4")) return url
             
+            val regex = """https?://[^\s"']+""".toRegex()
+            val matches = regex.findAll(jsonStr)
+            for (match in matches) {
+                val m = match.value
+                val lower = m.lowercase()
+                if (lower.contains(".mp4") || lower.contains("video") || lower.contains("download") || lower.contains("asset")) {
+                    return m.removeSurrounding("\"").removeSurrounding("'")
+                }
+            }
+            
             null
         } catch (e: Exception) {
+            val regex = """https?://[^\s"']+""".toRegex()
+            val matches = regex.findAll(jsonStr)
+            for (match in matches) {
+                val m = match.value
+                val lower = m.lowercase()
+                if (lower.contains(".mp4") || lower.contains("video") || lower.contains("download") || lower.contains("asset")) {
+                    return m.removeSurrounding("\"").removeSurrounding("'")
+                }
+            }
             null
         }
     }
