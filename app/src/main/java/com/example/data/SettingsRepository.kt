@@ -55,11 +55,19 @@ class SettingsRepository(private val context: Context) {
     private val ECONOMY_MODE = booleanPreferencesKey("economy_mode")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
 
+    private val secureSettingsManager = SecureSettingsManager(context)
+    
     val textProvider: Flow<String> = context.dataStore.data.map { it[TEXT_PROVIDER] ?: "" }
     
-    val apiKey: kotlinx.coroutines.flow.MutableStateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow("")
+    val apiKey: kotlinx.coroutines.flow.MutableStateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow(secureSettingsManager.getTextApiKey())
+    
     fun setApiKey(key: String) {
-        apiKey.value = key
+        if (key.isNotBlank()) {
+            secureSettingsManager.saveTextApiKey(key)
+        } else {
+            secureSettingsManager.clearTextApiKey()
+        }
+        apiKey.value = secureSettingsManager.getTextApiKey()
     }
 
     val baseUrl: Flow<String> = context.dataStore.data.map { it[BASE_URL] ?: "" }
@@ -117,18 +125,21 @@ class SettingsRepository(private val context: Context) {
     val memoryEnabled: Flow<Boolean> = context.dataStore.data.map { it[MEMORY_ENABLED] ?: true }
 
     val assistantLanguagePreference: Flow<String> = context.dataStore.data.map { it[ASSISTANT_LANGUAGE_PREFERENCE] ?: "id" }
-    val firecrawlApiKey: Flow<String> = context.dataStore.data.map { it[FIRECRAWL_API_KEY_PREF] ?: "" }
+    
+    val firecrawlApiKey: kotlinx.coroutines.flow.MutableStateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow(secureSettingsManager.getFirecrawlApiKey())
 
     suspend fun saveFirecrawlApiKey(key: String) {
-        context.dataStore.edit { prefs ->
-            prefs[FIRECRAWL_API_KEY_PREF] = key
+        if (key.isNotBlank()) {
+            secureSettingsManager.saveFirecrawlApiKey(key)
+        } else {
+            secureSettingsManager.clearFirecrawlApiKey()
         }
+        firecrawlApiKey.value = secureSettingsManager.getFirecrawlApiKey()
     }
 
     suspend fun removeFirecrawlApiKey() {
-        context.dataStore.edit { prefs ->
-            prefs.remove(FIRECRAWL_API_KEY_PREF)
-        }
+        secureSettingsManager.clearFirecrawlApiKey()
+        firecrawlApiKey.value = secureSettingsManager.getFirecrawlApiKey()
     }
 
     suspend fun updateModel(modelName: String) {

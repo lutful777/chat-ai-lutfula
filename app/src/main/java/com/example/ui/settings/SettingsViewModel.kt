@@ -100,6 +100,8 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+    private val MASKED_KEY_PLACEHOLDER = "••••••••••••••••"
+
     init {
         loadSettings()
         viewModelScope.launch {
@@ -132,17 +134,17 @@ class SettingsViewModel(
                 else -> rawProvider
             }
             val url = settingsRepository.baseUrl.first()
-            val key = settingsRepository.apiKey.first()
+            val key = settingsRepository.apiKey.value
             val path = settingsRepository.textPath.first()
             val model = settingsRepository.model.first()
-            val firecrawlKey = settingsRepository.firecrawlApiKey.first()
+            val firecrawlKey = settingsRepository.firecrawlApiKey.value
             
             _uiState.update {
                 it.copy(
                     textProvider = provider.takeIf { p -> p.isNotEmpty() } ?: "bluesminds",
                     baseUrl = url,
-                    apiKey = key,
-                    firecrawlApiKey = firecrawlKey,
+                    apiKey = if (key.isNotBlank()) MASKED_KEY_PLACEHOLDER else "",
+                    firecrawlApiKey = if (firecrawlKey.isNotBlank()) MASKED_KEY_PLACEHOLDER else "",
                     textPath = path.takeIf { p -> p.isNotEmpty() } ?: "/chat/completions",
                     modelName = model,
                     
@@ -188,10 +190,9 @@ class SettingsViewModel(
     fun saveFirecrawlKey() {
         viewModelScope.launch {
             val state = _uiState.value
-            if (state.firecrawlApiKey.isNotBlank()) {
-                settingsRepository.saveFirecrawlApiKey(state.firecrawlApiKey)
-                _uiState.update { it.copy(isSaved = true) }
-            }
+            val keyToSave = if (state.firecrawlApiKey == MASKED_KEY_PLACEHOLDER) settingsRepository.firecrawlApiKey.value else state.firecrawlApiKey
+            settingsRepository.saveFirecrawlApiKey(keyToSave)
+            _uiState.update { it.copy(isSaved = true, firecrawlApiKey = if (keyToSave.isNotBlank()) MASKED_KEY_PLACEHOLDER else "") }
         }
     }
 
@@ -226,9 +227,10 @@ class SettingsViewModel(
 
     private fun validateTextSettings(): Boolean {
         val state = _uiState.value
+        val actualKey = if (state.apiKey == MASKED_KEY_PLACEHOLDER) settingsRepository.apiKey.value else state.apiKey
         return when {
             state.baseUrl.isBlank() -> { _uiState.update { it.copy(validationError = "Base URL is required") }; false }
-            state.apiKey.isBlank() -> { _uiState.update { it.copy(validationError = "API key is required") }; false }
+            actualKey.isBlank() -> { _uiState.update { it.copy(validationError = "API key is required") }; false }
             state.textPath.isBlank() -> { _uiState.update { it.copy(validationError = "API path is required") }; false }
             state.modelName.isBlank() -> { _uiState.update { it.copy(validationError = "Model is required") }; false }
             else -> true
@@ -239,9 +241,10 @@ class SettingsViewModel(
         if (!validateTextSettings()) return
         viewModelScope.launch {
             val state = _uiState.value
-            settingsRepository.saveSettings(state.textProvider, state.apiKey, state.baseUrl, state.textPath, state.modelName)
+            val keyToSave = if (state.apiKey == MASKED_KEY_PLACEHOLDER) settingsRepository.apiKey.value else state.apiKey
+            settingsRepository.saveSettings(state.textProvider, keyToSave, state.baseUrl, state.textPath, state.modelName)
             settingsRepository.addSavedModel(state.modelName)
-            _uiState.update { it.copy(isSaved = true, validationError = null, testResult = null, testError = null) }
+            _uiState.update { it.copy(isSaved = true, validationError = null, testResult = null, testError = null, apiKey = if (keyToSave.isNotBlank()) MASKED_KEY_PLACEHOLDER else "") }
         }
     }
 
@@ -253,6 +256,7 @@ class SettingsViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val state = _uiState.value
+                val actualKey = if (state.apiKey == MASKED_KEY_PLACEHOLDER) settingsRepository.apiKey.value else state.apiKey
                 val baseUrl = state.baseUrl.trimEnd('/')
                 val path = if (state.textPath.startsWith("/")) state.textPath else "/${state.textPath}"
                 val endpoint = "$baseUrl$path"
@@ -268,7 +272,7 @@ class SettingsViewModel(
 
                 val request = Request.Builder()
                     .url(endpoint)
-                    .addHeader("Authorization", "Bearer ${state.apiKey}")
+                    .addHeader("Authorization", "Bearer $actualKey")
                     .addHeader("Content-Type", "application/json")
                     .post(body)
                     .build()
