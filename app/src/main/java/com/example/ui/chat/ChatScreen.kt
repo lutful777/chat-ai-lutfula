@@ -434,53 +434,100 @@ fun ChatScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Floating Menu Button
-            var showMenu by remember { mutableStateOf(false) }
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Floating Menu Button
+                var showMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Color.White)
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("New Chat", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                viewModel.createNewSession()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Chat History", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                showHistoryDialog = true
+                            }
+                        )
+                        HorizontalDivider(color = OutlineDark)
+                        DropdownMenuItem(
+                            text = { Text("Settings", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToSettings()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Outlook Mail", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToOutlook()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("AI Studio", color = Color.White) },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToStudio()
+                            }
+                        )
+                    }
                 }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("New Chat", color = Color.White) },
-                        onClick = {
-                            showMenu = false
-                            viewModel.createNewSession()
+
+                // Model Selector
+                if (uiState.savedModelsList.isNotEmpty()) {
+                    var showModelMenu by remember { mutableStateOf(false) }
+                    
+                    val displayModel = uiState.currentModel
+                        .takeIf { it.isNotBlank() } ?: (uiState.savedModelsList.firstOrNull() ?: "Select model")
+                    
+                    val shortModelName = displayModel.substringAfterLast("/")
+                    val modelText = "$shortModelName ▼"
+
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                                .clickable { showModelMenu = true }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = modelText,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Chat History", color = Color.White) },
-                        onClick = {
-                            showMenu = false
-                            showHistoryDialog = true
+
+                        DropdownMenu(
+                            expanded = showModelMenu,
+                            onDismissRequest = { showModelMenu = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            uiState.savedModelsList.forEach { model ->
+                                DropdownMenuItem(
+                                    text = { Text(model.substringAfterLast("/"), color = Color.White) },
+                                    onClick = {
+                                        showModelMenu = false
+                                        viewModel.updateSelectedModel(model)
+                                    }
+                                )
+                            }
                         }
-                    )
-                    HorizontalDivider(color = OutlineDark)
-                    DropdownMenuItem(
-                        text = { Text("Settings", color = Color.White) },
-                        onClick = {
-                            showMenu = false
-                            onNavigateToSettings()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Outlook Mail", color = Color.White) },
-                        onClick = {
-                            showMenu = false
-                            onNavigateToOutlook()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("AI Studio", color = Color.White) },
-                        onClick = {
-                            showMenu = false
-                            onNavigateToStudio()
-                        }
-                    )
+                    }
                 }
             }
 

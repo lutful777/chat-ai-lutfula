@@ -117,6 +117,12 @@ class SettingsRepository(private val context: Context) {
 
     val assistantLanguagePreference: Flow<String> = context.dataStore.data.map { it[ASSISTANT_LANGUAGE_PREFERENCE] ?: "id" }
 
+    suspend fun updateModel(modelName: String) {
+        context.dataStore.edit { prefs ->
+            prefs[MODEL] = modelName
+        }
+    }
+
     suspend fun saveSettings(provider: String, key: String, url: String, path: String, modelName: String) {
         setApiKey(key)
         context.dataStore.edit { prefs ->

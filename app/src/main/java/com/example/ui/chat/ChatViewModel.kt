@@ -44,6 +44,8 @@ data class ChatUiState(
     val messages: List<UiMessage> = emptyList(),
     val sessions: List<ChatSessionEntity> = emptyList(),
     val currentSessionId: Long? = null,
+    val currentModel: String = "",
+    val savedModelsList: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val loadingText: String? = null,
     val error: String? = null,
@@ -74,6 +76,28 @@ class ChatViewModel(
                     selectSession(sessions.first().id)
                 }
             }
+        }
+        viewModelScope.launch {
+            settingsRepository.model.collect { model ->
+                _uiState.update { it.copy(currentModel = model) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.savedModelsList.collect { models ->
+                _uiState.update { it.copy(savedModelsList = models) }
+                val current = _uiState.value.currentModel
+                if (current.isNotBlank() && models.isNotEmpty() && !models.contains(current)) {
+                    updateSelectedModel(models.first())
+                } else if (current.isNotBlank() && models.isEmpty()) {
+                    updateSelectedModel("")
+                }
+            }
+        }
+    }
+
+    fun updateSelectedModel(modelName: String) {
+        viewModelScope.launch {
+            settingsRepository.updateModel(modelName)
         }
     }
 
