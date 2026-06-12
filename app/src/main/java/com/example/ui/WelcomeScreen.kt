@@ -35,7 +35,8 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
         Text(
             text = "Wellcome",
             style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp
             ),
             color = Color.White
         )
