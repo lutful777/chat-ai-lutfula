@@ -55,6 +55,7 @@ class ChatViewModel(
     private val settingsRepository: SettingsRepository,
     private val chatRepository: ChatRepository,
     private val memoryRepository: com.example.data.MemoryRepository,
+    private val localStorage: com.example.data.LocalStorage,
     private val okHttpClient: OkHttpClient,
     private val moshi: Moshi
 ) : ViewModel() {
@@ -170,15 +171,17 @@ class ChatViewModel(
 
         if (textLower == "hapus memory") {
             memoryRepository.deleteAllMemories()
-            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "All memories have been deleted."))
+            localStorage.prefs.edit().remove("custom_instruction").commit()
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "All memories and instructions have been deleted."))
             return true
-        } else if (textLower == "lihat memory") {
+        } else if (textLower == "lihat memory" || textLower == "debug lokal") {
             val memories = memoryRepository.getAllMemories()
-            if (memories.isEmpty()) {
+            val savedLocal = localStorage.getInstruction()
+            if (memories.isEmpty() && savedLocal.isEmpty()) {
                 chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is empty."))
             } else {
                 val listStr = memories.joinToString("\n") { "- ${it.content}" }
-                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Here are my memories:\n$listStr"))
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Debug Check - LocalStorage:\n$savedLocal\n\nRoom memories:\n$listStr"))
             }
             return true
         }
@@ -221,8 +224,13 @@ class ChatViewModel(
             }
         }
 
-        memoryRepository.insertMemory(content = content, category = if (isExplicit) "manual" else "auto")
-        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Got it! I will remember this."))
+        val saved = localStorage.saveInstruction(content)
+        if (saved) {
+            memoryRepository.insertMemory(content = content, category = if (isExplicit) "manual" else "auto")
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Got it! I will remember this."))
+        } else {
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Failed to save memory to localStorage."))
+        }
         return true
     }
 
@@ -418,6 +426,12 @@ class ChatViewModel(
                 chatMessages.addAll(previousMessagesSnapshot.filter { !it.content.startsWith("⚠️") }.map { 
                     ChatMessage(role = it.role, content = it.content) 
                 })
+                
+                val localInstruction = localStorage.getInstruction()
+                if (localInstruction.isNotEmpty()) {
+                    chatMessages.add(ChatMessage(role = "system", content = "CRITICAL USER PREFERENCE (ALWAYS FOLLOW THIS IN YOUR NEXT RESPONSE):\n$localInstruction"))
+                }
+
                 // Manually append the latest user message
                 chatMessages.add(ChatMessage(role = "user", content = messageText))
 
@@ -511,13 +525,14 @@ class ChatViewModel(
         private val settingsRepository: SettingsRepository,
         private val chatRepository: ChatRepository,
         private val memoryRepository: com.example.data.MemoryRepository,
+        private val localStorage: com.example.data.LocalStorage,
         private val okHttpClient: OkHttpClient,
         private val moshi: Moshi
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
-                return ChatViewModel(settingsRepository, chatRepository, memoryRepository, okHttpClient, moshi) as T
+                return ChatViewModel(settingsRepository, chatRepository, memoryRepository, localStorage, okHttpClient, moshi) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

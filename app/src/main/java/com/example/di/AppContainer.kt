@@ -17,8 +17,16 @@ object AppContainer {
     private var _database: AppDatabase? = null
     private var _chatRepository: ChatRepository? = null
     private var _memoryRepository: com.example.data.MemoryRepository? = null
+    private var _localStorage: com.example.data.LocalStorage? = null
     private var _microsoftAuthService: MicrosoftAuthService? = null
     private var _microsoftGraphRepository: MicrosoftGraphRepository? = null
+
+    fun getLocalStorage(context: Context): com.example.data.LocalStorage {
+        if (_localStorage == null) {
+            _localStorage = com.example.data.LocalStorage(context.applicationContext)
+        }
+        return _localStorage!!
+    }
 
     fun getMicrosoftAuthService(context: Context): MicrosoftAuthService {
         if (_microsoftAuthService == null) {

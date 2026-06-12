@@ -48,6 +48,7 @@ fun AppNavigation() {
             settingsRepository,
             chatRepository,
             AppContainer.getMemoryRepository(context),
+            AppContainer.getLocalStorage(context),
             AppContainer.okHttpClient,
             AppContainer.moshi
         )
