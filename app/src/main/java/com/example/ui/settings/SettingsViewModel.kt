@@ -109,7 +109,15 @@ class SettingsViewModel(
 
     private fun loadSettings() {
         viewModelScope.launch {
-            val provider = settingsRepository.textProvider.first()
+            val rawProvider = settingsRepository.textProvider.first()
+            val provider = when (rawProvider) {
+                "OpenAI" -> "bluesminds"
+                "BlueSminds" -> "bluesminds"
+                "OpenRouter" -> "openrouter"
+                "xAI" -> "xai"
+                "Custom" -> "custom"
+                else -> rawProvider
+            }
             val url = settingsRepository.baseUrl.first()
             val key = settingsRepository.apiKey.first()
             val path = settingsRepository.textPath.first()
@@ -118,7 +126,7 @@ class SettingsViewModel(
             
             _uiState.update {
                 it.copy(
-                    textProvider = provider.takeIf { p -> p.isNotEmpty() } ?: "OpenAI",
+                    textProvider = provider.takeIf { p -> p.isNotEmpty() } ?: "bluesminds",
                     baseUrl = url,
                     apiKey = key,
                     textPath = path.takeIf { p -> p.isNotEmpty() } ?: "/chat/completions",
@@ -170,9 +178,9 @@ class SettingsViewModel(
 
     fun applyPreset(presetName: String) {
         val (url, model, path) = when (presetName) {
-            "OpenAI" -> Triple("https://api.openai.com/v1", "gpt-4o", "/chat/completions")
-            "OpenRouter" -> Triple("https://openrouter.ai/api/v1", "openai/o1-mini", "/chat/completions")
-            "xAI" -> Triple("https://api.x.ai/v1", "grok-2-latest", "/chat/completions")
+            "bluesminds" -> Triple("https://api.bluesminds.com/v1", "", "/chat/completions")
+            "openrouter" -> Triple("https://openrouter.ai/api/v1", "openai/o1-mini", "/chat/completions")
+            "xai" -> Triple("https://api.x.ai/v1", "grok-2-latest", "/chat/completions")
             else -> Triple("", "", "")
         }
         _uiState.update { 

@@ -54,10 +54,10 @@ fun SettingsScreen(
     val context = LocalContext.current
 
     val presets = listOf(
-        ProviderData("OpenAI", "api.openai.com", Icons.Filled.AutoAwesome),
-        ProviderData("OpenRouter", "openrouter.ai", Icons.Filled.SettingsSuggest),
-        ProviderData("xAI", "api.x.ai", Icons.Filled.Language),
-        ProviderData("Custom", "Your own endpoint", Icons.Filled.Code)
+        ProviderData("bluesminds", "BlueSminds", "api.bluesminds.com", Icons.Filled.AutoAwesome),
+        ProviderData("openrouter", "OpenRouter", "openrouter.ai", Icons.Filled.SettingsSuggest),
+        ProviderData("xai", "xAI", "api.x.ai", Icons.Filled.Language),
+        ProviderData("custom", "Custom", "Your own endpoint", Icons.Filled.Code)
     )
 
     Scaffold(
@@ -105,15 +105,15 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 presets.forEach { provider ->
-                    val isSelected = uiState.textProvider == provider.name
+                    val isSelected = uiState.textProvider == provider.id
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 12.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                viewModel.updateTextProvider(provider.name)
-                                viewModel.applyPreset(provider.name)
+                                viewModel.updateTextProvider(provider.id)
+                                viewModel.applyPreset(provider.id)
                             }
                             .border(
                                 width = if (isSelected) 1.dp else 1.dp,
@@ -513,7 +513,7 @@ fun SettingsScreen(
     }
 }
 
-data class ProviderData(val name: String, val subtitle: String, val icon: ImageVector)
+data class ProviderData(val id: String, val name: String, val subtitle: String, val icon: ImageVector)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

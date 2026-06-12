@@ -63,7 +63,7 @@ fun WelcomeScreen(onGetStarted: () -> Unit) {
         FeatureItem(
             icon = Icons.Filled.Language,
             title = "Multi-Provider",
-            subtitle = "OpenAI, OpenRouter, xAI or custom endpoint"
+            subtitle = "BlueSminds, OpenRouter, xAI or custom endpoint"
         )
         Spacer(modifier = Modifier.height(16.dp))
         FeatureItem(
