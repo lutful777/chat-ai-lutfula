@@ -296,7 +296,8 @@ class ChatViewModel(
                 val baseUrl = settingsRepository.baseUrl.first()
                 val path = settingsRepository.textPath.first()
                 val modelName = settingsRepository.model.first()
-                val firecrawlKey = com.example.BuildConfig.FIRECRAWL_API_KEY
+                val prefFirecrawlKey = settingsRepository.firecrawlApiKey.first()
+                val firecrawlKey = if (prefFirecrawlKey.isNotBlank()) prefFirecrawlKey else com.example.BuildConfig.FIRECRAWL_API_KEY
                 
                 android.util.Log.d("ChatViewModel", "Firecrawl configured: ${firecrawlKey.isNotBlank() && firecrawlKey != "\"YOUR_FIRECRAWL_API_KEY\"" && firecrawlKey != "YOUR_FIRECRAWL_API_KEY"}")
                 android.util.Log.d("ChatViewModel", "Firecrawl key length: ${firecrawlKey.length}")
@@ -323,7 +324,7 @@ class ChatViewModel(
                 if (urlsInMessage.isNotEmpty()) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking website...") }
                     if (firecrawlKey.isBlank() || firecrawlKey == "\"YOUR_FIRECRAWL_API_KEY\"" || firecrawlKey == "YOUR_FIRECRAWL_API_KEY") {
-                        searchContext = "The user sent a link, but website reading is not configured. You MUST reply with exactly this text: 'Website reading is not configured yet. Please add Firecrawl API key in environment variables.'"
+                        searchContext = "The user sent a link, but website reading is not configured. You MUST reply with exactly this text: 'Please add your Firecrawl API key in Settings first.'"
                     } else {
                         val scrapeUrl = urlsInMessage.first()
                         try {
@@ -363,7 +364,7 @@ class ChatViewModel(
                     _uiState.update { it.copy(loadingText = null) }
                 } else if (useSearch) {
                     if (firecrawlKey.isBlank() || firecrawlKey == "\"YOUR_FIRECRAWL_API_KEY\"" || firecrawlKey == "YOUR_FIRECRAWL_API_KEY") {
-                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search API key is missing. Answering without live search."))
+                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Please add your Firecrawl API key in Settings first. Answering without live search."))
                     } else {
                         try {
                             val searchAdapter = moshi.adapter(com.example.network.FirecrawlSearchRequest::class.java)

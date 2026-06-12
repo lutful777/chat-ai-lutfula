@@ -38,6 +38,8 @@ data class SettingsUiState(
     val validationError: String? = null,
     val microsoftAccount: IAccount? = null,
     
+    val firecrawlApiKey: String = "",
+
     // Create Photo
     val createPhotoProvider: String = "",
     val createPhotoApiKey: String = "",
@@ -133,12 +135,14 @@ class SettingsViewModel(
             val key = settingsRepository.apiKey.first()
             val path = settingsRepository.textPath.first()
             val model = settingsRepository.model.first()
+            val firecrawlKey = settingsRepository.firecrawlApiKey.first()
             
             _uiState.update {
                 it.copy(
                     textProvider = provider.takeIf { p -> p.isNotEmpty() } ?: "bluesminds",
                     baseUrl = url,
                     apiKey = key,
+                    firecrawlApiKey = firecrawlKey,
                     textPath = path.takeIf { p -> p.isNotEmpty() } ?: "/chat/completions",
                     modelName = model,
                     
@@ -177,8 +181,26 @@ class SettingsViewModel(
     fun updateTextProvider(provider: String) { _uiState.update { it.copy(textProvider = provider, isSaved = false) } }
     fun updateBaseUrl(url: String) { _uiState.update { it.copy(baseUrl = url, isSaved = false, validationError = null) } }
     fun updateApiKey(key: String) { _uiState.update { it.copy(apiKey = key, isSaved = false, validationError = null) } }
+    fun updateFirecrawlApiKey(key: String) { _uiState.update { it.copy(firecrawlApiKey = key, isSaved = false) } }
     fun updateTextPath(path: String) { _uiState.update { it.copy(textPath = path, isSaved = false, validationError = null) } }
     fun updateModelName(model: String) { _uiState.update { it.copy(modelName = model, isSaved = false, validationError = null) } }
+
+    fun saveFirecrawlKey() {
+        viewModelScope.launch {
+            val state = _uiState.value
+            if (state.firecrawlApiKey.isNotBlank()) {
+                settingsRepository.saveFirecrawlApiKey(state.firecrawlApiKey)
+                _uiState.update { it.copy(isSaved = true) }
+            }
+        }
+    }
+
+    fun removeFirecrawlKey() {
+        viewModelScope.launch {
+            settingsRepository.removeFirecrawlApiKey()
+            _uiState.update { it.copy(firecrawlApiKey = "", isSaved = true) }
+        }
+    }
 
     fun clearTestResult() {
         _uiState.update { it.copy(testResult = null, testError = null, validationError = null) }

@@ -19,6 +19,7 @@ class SettingsRepository(private val context: Context) {
     private val SAVED_MODELS = stringPreferencesKey("saved_models")
     private val TEXT_PROVIDER = stringPreferencesKey("text_provider")
     private val ASSISTANT_LANGUAGE_PREFERENCE = stringPreferencesKey("assistantLanguagePreference")
+    private val FIRECRAWL_API_KEY_PREF = stringPreferencesKey("firecrawl_api_key_pref")
 
     // Media Generation Settings
 
@@ -116,6 +117,19 @@ class SettingsRepository(private val context: Context) {
     val memoryEnabled: Flow<Boolean> = context.dataStore.data.map { it[MEMORY_ENABLED] ?: true }
 
     val assistantLanguagePreference: Flow<String> = context.dataStore.data.map { it[ASSISTANT_LANGUAGE_PREFERENCE] ?: "id" }
+    val firecrawlApiKey: Flow<String> = context.dataStore.data.map { it[FIRECRAWL_API_KEY_PREF] ?: "" }
+
+    suspend fun saveFirecrawlApiKey(key: String) {
+        context.dataStore.edit { prefs ->
+            prefs[FIRECRAWL_API_KEY_PREF] = key
+        }
+    }
+
+    suspend fun removeFirecrawlApiKey() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(FIRECRAWL_API_KEY_PREF)
+        }
+    }
 
     suspend fun updateModel(modelName: String) {
         context.dataStore.edit { prefs ->

@@ -429,6 +429,77 @@ fun SettingsScreen(
                 }
             }
             
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Firecrawl Context Settings
+            Text("Firecrawl API Key", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
+            Text("Used for website reading / URL reading", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.Start))
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            OutlinedTextField(
+                value = uiState.firecrawlApiKey,
+                onValueChange = { viewModel.updateFirecrawlApiKey(it) },
+                label = { Text("Firecrawl API Key") },
+                placeholder = { Text("fc-xxxxxxxxxxxxxxxx") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                singleLine = true,
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    val image = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
+                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                        Icon(imageVector = image, contentDescription = "Toggle password", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    cursorColor = Color.White,
+                    focusedBorderColor = PrimaryNeon,
+                    unfocusedBorderColor = OutlineDark,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Button(
+                onClick = {
+                    if (uiState.firecrawlApiKey.isNotBlank()) {
+                        viewModel.saveFirecrawlKey()
+                        android.widget.Toast.makeText(context, "Firecrawl API key saved", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .background(Brush.horizontalGradient(listOf(PrimaryBlue, PrimaryNeon)), RoundedCornerShape(24.dp)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                contentPadding = PaddingValues()
+            ) {
+                Text("Save Firecrawl Key", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+            
+            if (uiState.firecrawlApiKey.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        viewModel.removeFirecrawlKey()
+                        android.widget.Toast.makeText(context, "Firecrawl API key removed", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Text("Remove Firecrawl Key", fontSize = 14.sp, color = Color.Red)
+                }
+            }
+
             Spacer(modifier = Modifier.height(48.dp))
 
             // Media Generation Settings
