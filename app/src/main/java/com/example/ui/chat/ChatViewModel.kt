@@ -297,6 +297,10 @@ class ChatViewModel(
                 val path = settingsRepository.textPath.first()
                 val modelName = settingsRepository.model.first()
                 val firecrawlKey = com.example.BuildConfig.FIRECRAWL_API_KEY
+                
+                android.util.Log.d("ChatViewModel", "Firecrawl configured: ${firecrawlKey.isNotBlank() && firecrawlKey != "\"YOUR_FIRECRAWL_API_KEY\"" && firecrawlKey != "YOUR_FIRECRAWL_API_KEY"}")
+                android.util.Log.d("ChatViewModel", "Firecrawl key length: ${firecrawlKey.length}")
+
                 val langPref = settingsRepository.assistantLanguagePreference.first()
                 val memoryEnabled = settingsRepository.memoryEnabled.first()
 
