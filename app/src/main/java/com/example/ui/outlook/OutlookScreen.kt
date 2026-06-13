@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +43,7 @@ import java.util.TimeZone
 fun OutlookScreen(
     viewModel: OutlookViewModel,
     onNavigateBack: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     onAskAi: (GraphEmail) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -66,6 +68,45 @@ fun OutlookScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            if (uiState.microsoftAccount == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Outlook belum terhubung",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Hubungkan akun Microsoft dari Settings. Halaman Outlook tidak lagi menampilkan tombol login langsung.",
+                            color = Color.Gray,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(
+                            onClick = onNavigateToSettings,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Text("Buka Settings", color = Color.White)
+                        }
+                    }
+                }
+                return@Column
+            }
+
             val folders = listOf(
                 "inbox" to "Inbox",
                 "sentitems" to "Sent",
@@ -98,7 +139,6 @@ fun OutlookScreen(
                 }
             }
 
-            // Search Bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -134,35 +174,7 @@ fun OutlookScreen(
                 )
             )
 
-            if (uiState.microsoftAccount == null) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Filled.Email, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(64.dp))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Connect Microsoft Account",
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Login to read and search your Outlook emails.",
-                            color = Color.Gray,
-                            fontSize = 14.sp
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        val activity = androidx.activity.compose.LocalActivity.current
-                        Button(
-                            onClick = { activity?.let { viewModel.signInMicrosoft(it) } },
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                            shape = RoundedCornerShape(24.dp)
-                        ) {
-                            Text("Login Microsoft", color = Color.White)
-                        }
-                    }
-                }
-            } else if (uiState.isLoading) {
+            if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = PrimaryBlue)
                 }
@@ -171,18 +183,20 @@ fun OutlookScreen(
                     Text(
                         text = uiState.error ?: "",
                         color = Color.Red.copy(alpha = 0.8f),
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
                     )
                 }
             } else if (uiState.emails.isEmpty()) {
-                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Filled.Email, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = if (searchQuery.isNotEmpty()) "No emails found for '$searchQuery'" else "No emails or not connected.",
+                            text = if (searchQuery.isNotEmpty()) "No emails found for '$searchQuery'" else "No emails found.",
                             color = Color.Gray,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -249,7 +263,7 @@ fun OutlookScreen(
                                 if (email.hasAttachments == true) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Filled.Email, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(14.dp)) // Using email icon as generic attachment icon
+                                        Icon(Icons.Filled.Email, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(14.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text("Ada lampiran", color = PrimaryBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
@@ -257,7 +271,7 @@ fun OutlookScreen(
                                 if (!email.webLink.isNullOrBlank()) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     val contextUri = androidx.compose.ui.platform.LocalContext.current
-                                    Text("Buka di Browser", color = Color.Cyan, fontSize = 12.sp, modifier = Modifier.clickable { 
+                                    Text("Buka di Browser", color = Color.Cyan, fontSize = 12.sp, modifier = Modifier.clickable {
                                         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(email.webLink))
                                         contextUri.startActivity(intent)
                                     })
