@@ -70,7 +70,7 @@ class MicrosoftAuthService(private val context: Context) {
 
             val signatureHash = getSignatureHash()
             val encodedHash = java.net.URLEncoder.encode(signatureHash, "UTF-8")
-
+            
             val msalConfigJson = """
             {
               "client_id" : "$clientId",
@@ -108,13 +108,13 @@ class MicrosoftAuthService(private val context: Context) {
 
                     override fun onError(exception: MsalException) {
                         Log.e("MSAL", "Error creating MSAL app", exception)
-                        _authError.value = "Init error: ${exception.message}"
+                        _authError.value = "MSAL gagal diinisialisasi. Cek auth_config_single_account.json.\nError: ${exception.message}"
                     }
                 }
             )
         } catch (e: Exception) {
             Log.e("MSAL", "Failed to initialize MSAL", e)
-            _authError.value = "Config error: ${e.message}"
+            _authError.value = "MSAL gagal diinisialisasi. Cek auth_config_single_account.json.\nConfig error: ${e.message}"
         }
     }
 
@@ -158,7 +158,6 @@ class MicrosoftAuthService(private val context: Context) {
                         }
 
                         override fun onError(exception: MsalException) {
-                            Log.e("MSAL", "Interactive Auth failed", exception)
                             val displayMsg = when {
                                 exception.errorCode == "user_cancelled" -> "Login dibatalkan oleh pengguna."
                                 exception.errorCode == "no_network_connection" -> "Gagal: Tidak ada koneksi internet."
@@ -166,6 +165,7 @@ class MicrosoftAuthService(private val context: Context) {
                                 exception.message?.contains("redirect_uri") == true -> "Gagal: Redirect URI mismatch. Pastikan Signature Hash sesuai."
                                 else -> "Login gagal: ${exception.message}"
                             }
+                            Log.e("MSAL", "MSAL login failed: $displayMsg", exception)
                             if (!resumed) {
                                 resumed = true
                                 continuation.resume(Result.failure(Exception(displayMsg)))
@@ -173,7 +173,7 @@ class MicrosoftAuthService(private val context: Context) {
                         }
 
                         override fun onCancel() {
-                            Log.i("MSAL", "Interactive Auth canceled")
+                            Log.i("MSAL", "MSAL login cancelled")
                             if (!resumed) {
                                 resumed = true
                                 continuation.resume(Result.failure(Exception("Login dibatalkan.")))

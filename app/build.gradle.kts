@@ -1,3 +1,5 @@
+import java.net.URLEncoder
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -28,8 +30,8 @@ android {
     
     // Fallback if not configured in .env
     val signatureHashFallback = "EfKLa/C+05Hz/xBbYz1eP6zecJ0="
-    val signatureHash = project.findProperty("MICROSOFT_SIGNATURE_HASH")?.toString()?.takeIf { it.isNotBlank() && it != "YOUR_BASE64_SIGNATURE_HASH" } ?: signatureHashFallback
-    manifestPlaceholders["msalSignatureHash"] = signatureHash
+    val rawSignatureHash = project.findProperty("MICROSOFT_SIGNATURE_HASH")?.toString()?.takeIf { it.isNotBlank() && it != "YOUR_BASE64_SIGNATURE_HASH" } ?: signatureHashFallback
+    manifestPlaceholders["msalSignatureHash"] = rawSignatureHash
   }
 
   signingConfigs {

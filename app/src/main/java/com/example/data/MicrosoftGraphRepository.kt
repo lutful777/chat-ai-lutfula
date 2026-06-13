@@ -105,9 +105,9 @@ class MicrosoftGraphRepository(private val authService: MicrosoftAuthService) {
             "Profile Name: $name\nEmail: $email"
         } catch (e: retrofit2.HttpException) {
             val errMessage = when (e.code()) {
-                401 -> "Unauthorized. Please login again."
-                403 -> "Forbidden. Need permission to access this resource."
-                404 -> "Resource not found on Microsoft Graph."
+                401 -> "Graph 401: token tidak valid / login ulang"
+                403 -> "Graph 403: permission belum diberikan"
+                404 -> "Graph 404: endpoint salah"
                 else -> "Microsoft Graph error: ${e.code()}"
             }
             _error.value = errMessage
@@ -130,9 +130,9 @@ class MicrosoftGraphRepository(private val authService: MicrosoftAuthService) {
             android.util.Log.i("MSAL", "Graph inbox success")
         } catch (e: retrofit2.HttpException) {
              _error.value = when (e.code()) {
-                401 -> "Unauthorized. Please login again."
-                403 -> "Forbidden. Need permission to access inbox."
-                404 -> "Inbox not found."
+                401 -> "Graph 401: token tidak valid / login ulang"
+                403 -> "Graph 403: permission Mail.Read belum diberikan"
+                404 -> "Graph 404: endpoint salah"
                 else -> "Microsoft Graph error: ${e.code()}"
             }
         } catch (e: Exception) {
@@ -150,9 +150,9 @@ class MicrosoftGraphRepository(private val authService: MicrosoftAuthService) {
             _emails.value = response.value
         } catch (e: retrofit2.HttpException) {
              _error.value = when (e.code()) {
-                401 -> "Unauthorized. Please login again."
-                403 -> "Forbidden. Need permission to search."
-                404 -> "Endpoint not found."
+                401 -> "Graph 401: token tidak valid / login ulang"
+                403 -> "Graph 403: permission Mail.Read belum diberikan"
+                404 -> "Graph 404: endpoint salah"
                 else -> "Microsoft Graph error: ${e.code()}"
             }
         } catch (e: Exception) {

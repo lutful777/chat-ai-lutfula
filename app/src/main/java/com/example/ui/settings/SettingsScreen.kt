@@ -259,9 +259,17 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = { 
-                                val activity = context as? Activity
+                                var activityContext = context
+                                while (activityContext is android.content.ContextWrapper) {
+                                    if (activityContext is android.app.Activity) break
+                                    activityContext = activityContext.baseContext
+                                }
+                                val activity = activityContext as? android.app.Activity
                                 if (activity != null) {
+                                    android.util.Log.i("MSAL", "Connect Outlook clicked")
                                     viewModel.signInMicrosoft(activity)
+                                } else {
+                                    android.util.Log.e("MSAL", "Failed to find Activity from context")
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
