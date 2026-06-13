@@ -36,6 +36,10 @@ class MicrosoftAuthService(private val context: Context) {
         initializeMsal()
     }
 
+    fun isMsalAppInitialized(): Boolean {
+        return msalApp != null
+    }
+
     @Suppress("DEPRECATION")
     private fun getSignatureHash(): String {
         try {

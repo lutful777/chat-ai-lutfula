@@ -1,6 +1,8 @@
 package com.example.ui.settings
 
 import android.app.Activity
+import android.content.Context
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -201,12 +203,22 @@ class SettingsViewModel(
     fun updateMicrosoftClientId(id: String) { _uiState.update { it.copy(microsoftClientId = id) } }
     fun updateMicrosoftTenant(tenant: String) { _uiState.update { it.copy(microsoftTenant = tenant) } }
 
-    fun saveMicrosoftConfig() {
+    fun saveMicrosoftConfig(context: Context) {
         val state = _uiState.value
-        localStorage.saveMicrosoftClientId(state.microsoftClientId)
-        localStorage.saveMicrosoftTenant(state.microsoftTenant)
+        val clientId = state.microsoftClientId.trim()
+        val tenant = state.microsoftTenant.trim().ifEmpty { "common" }
+        
+        _uiState.update { it.copy(microsoftClientId = clientId, microsoftTenant = tenant) }
+        
+        if (clientId.isEmpty()) {
+            Toast.makeText(context, "Microsoft Client ID wajib diisi", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        localStorage.saveMicrosoftClientId(clientId)
+        localStorage.saveMicrosoftTenant(tenant)
         microsoftAuthService.reinitializeMsal()
-        _uiState.update { it.copy(isSaved = true) }
+        Toast.makeText(context, "Microsoft configuration saved", Toast.LENGTH_SHORT).show()
     }
     fun updateModelName(model: String) { 
         val ext = _uiState.value.savedModelsList.find { it.modelName == model }
@@ -569,20 +581,47 @@ class SettingsViewModel(
         }
     }
     
-    fun signInMicrosoft(activity: Activity) {
+    fun signInMicrosoft(activity: Activity, context: Context) {
         viewModelScope.launch {
+            // Auto save config first if there are any changes
+            val state = _uiState.value
+            val clientId = state.microsoftClientId.trim()
+            val tenant = state.microsoftTenant.trim().ifEmpty { "common" }
+            
+            if (clientId.isEmpty()) {
+                Toast.makeText(context, "Microsoft Client ID wajib diisi", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            // Always update config
+            localStorage.saveMicrosoftClientId(clientId)
+            localStorage.saveMicrosoftTenant(tenant)
+            microsoftAuthService.reinitializeMsal()
+            
+            _uiState.update { it.copy(isTesting = true, testError = null, testResult = null) }
+            
+            // Wait for MSAL to initialize (up to 3 seconds)
+            for (i in 0..30) {
+                if (microsoftAuthService.authError.value != null || microsoftAuthService.isMsalAppInitialized()) {
+                    break
+                }
+                kotlinx.coroutines.delay(100)
+            }
+            
             val err = microsoftAuthService.authError.value
-            if (err != null && err.contains("Client ID is empty")) {
-                _uiState.update { it.copy(testError = "Client ID kosong. Silakan simpan Microsoft Client ID terlebih dahulu.") }
+            if (err != null) {
+                _uiState.update { it.copy(isTesting = false, testError = err) }
+                Toast.makeText(context, "MSAL Error: $err", Toast.LENGTH_LONG).show()
                 return@launch
             }
             
-            _uiState.update { it.copy(testError = null, testResult = null) }
             val result = microsoftAuthService.acquireTokenInteractive(activity)
             result.onFailure { exception ->
-                _uiState.update { it.copy(testError = exception.message ?: "Login gagal") }
+                _uiState.update { it.copy(isTesting = false, testError = exception.message ?: "Login gagal") }
+                Toast.makeText(context, exception.message ?: "Login gagal", Toast.LENGTH_LONG).show()
             }.onSuccess { 
-                _uiState.update { it.copy(testResult = "Berhasil koneksi ke Outlook!") }
+                _uiState.update { it.copy(isTesting = false, testResult = "Berhasil koneksi ke Outlook!") }
+                Toast.makeText(context, "Outlook connected", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -199,7 +199,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
-                        onClick = { viewModel.saveMicrosoftConfig() },
+                        onClick = { viewModel.saveMicrosoftConfig(context) },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -267,15 +267,23 @@ fun SettingsScreen(
                                 val activity = activityContext as? android.app.Activity
                                 if (activity != null) {
                                     android.util.Log.i("MSAL", "Connect Outlook clicked")
-                                    viewModel.signInMicrosoft(activity)
+                                    viewModel.signInMicrosoft(activity, context)
                                 } else {
                                     android.util.Log.e("MSAL", "Failed to find Activity from context")
+                                    android.widget.Toast.makeText(context, "Activity not found, cannot open Microsoft login", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !uiState.isTesting
                         ) {
-                            Text("Connect Outlook", color = Color.White)
+                            if (uiState.isTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Connecting...", color = Color.White)
+                            } else {
+                                Text("Connect Outlook", color = Color.White)
+                            }
                         }
                     }
                 }
