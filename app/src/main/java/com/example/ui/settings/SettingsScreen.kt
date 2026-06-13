@@ -220,7 +220,7 @@ fun SettingsScreen(
                         modifier = Modifier.background(OutlineDark.copy(alpha=0.3f), RoundedCornerShape(4.dp)).padding(4.dp)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Divider(color = OutlineDark)
+                    HorizontalDivider(color = OutlineDark)
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     val account = uiState.microsoftAccount

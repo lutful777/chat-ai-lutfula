@@ -101,6 +101,7 @@ class MicrosoftGraphRepository(private val authService: MicrosoftAuthService) {
             val profile = graphApi.getProfile()
             val email = profile.mail ?: profile.userPrincipalName ?: "Unknown Email"
             val name = profile.displayName ?: "Unknown Name"
+            android.util.Log.i("MSAL", "Graph profile success")
             "Profile Name: $name\nEmail: $email"
         } catch (e: retrofit2.HttpException) {
             val errMessage = when (e.code()) {
@@ -126,6 +127,7 @@ class MicrosoftGraphRepository(private val authService: MicrosoftAuthService) {
         try {
             val response = graphApi.getMessages(folderId = folderId)
             _emails.value = response.value
+            android.util.Log.i("MSAL", "Graph inbox success")
         } catch (e: retrofit2.HttpException) {
              _error.value = when (e.code()) {
                 401 -> "Unauthorized. Please login again."

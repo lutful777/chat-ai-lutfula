@@ -14,13 +14,16 @@ import java.io.File
 import kotlin.coroutines.resume
 
 class MicrosoftAuthService(private val context: Context) {
-    private var msalApp: IMultipleAccountPublicClientApplication? = null
+    private var msalApp: ISingleAccountPublicClientApplication? = null
     private val localStorage = LocalStorage(context)
 
     private val _account = MutableStateFlow<IAccount?>(null)
     val account: StateFlow<IAccount?> = _account.asStateFlow()
 
-    private val scopes = arrayOf("User.Read", "Mail.ReadBasic", "Mail.Read", "offline_access")
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
+
+    private val scopes = arrayOf("User.Read", "Mail.Read", "offline_access")
 
     init {
         initializeMsal()
@@ -28,6 +31,7 @@ class MicrosoftAuthService(private val context: Context) {
 
     fun reinitializeMsal() {
         _account.value = null
+        _authError.value = null
         msalApp = null
         initializeMsal()
     }
@@ -57,7 +61,8 @@ class MicrosoftAuthService(private val context: Context) {
             if (clientId.isBlank() || clientId == "YOUR_MICROSOFT_CLIENT_ID") {
                 clientId = BuildConfig.MICROSOFT_CLIENT_ID
                 if (clientId.isBlank() || clientId == "YOUR_MICROSOFT_CLIENT_ID") {
-                    clientId = "YOUR_MICROSOFT_CLIENT_ID" // Placeholder, expect user to provide
+                    _authError.value = "Client ID is empty. Please configure it in settings."
+                    return // Cannot initialize without client ID
                 }
             }
             
@@ -71,7 +76,7 @@ class MicrosoftAuthService(private val context: Context) {
               "client_id" : "$clientId",
               "authorization_user_agent" : "DEFAULT",
               "redirect_uri" : "msauth://com.aistudio.aichatmobile.xmqpr/$encodedHash",
-              "account_mode" : "MULTIPLE",
+              "account_mode" : "SINGLE",
               "broker_redirect_uri_registered": true,
               "authorities" : [
                 {
@@ -85,104 +90,152 @@ class MicrosoftAuthService(private val context: Context) {
             }
             """.trimIndent()
 
-            val configFile = File(context.cacheDir, "msal_config.json")
+            val configFile = File(context.cacheDir, "auth_config_single_account.json")
             configFile.writeText(msalConfigJson)
+            
+            Log.i("MSAL", "MSAL init started")
 
-            PublicClientApplication.createMultipleAccountPublicClientApplication(
+            PublicClientApplication.createSingleAccountPublicClientApplication(
                 context,
                 configFile,
-                object : IPublicClientApplication.IMultipleAccountApplicationCreatedListener {
-                    override fun onCreated(application: IMultipleAccountPublicClientApplication) {
+                object : IPublicClientApplication.ISingleAccountApplicationCreatedListener {
+                    override fun onCreated(application: ISingleAccountPublicClientApplication) {
+                        Log.i("MSAL", "MSAL init success")
                         msalApp = application
-                        loadAccounts()
+                        _authError.value = null
+                        loadAccount()
                     }
 
                     override fun onError(exception: MsalException) {
-                        Log.e("MSAL", "Error creating MSAL app: ", exception)
+                        Log.e("MSAL", "Error creating MSAL app", exception)
+                        _authError.value = "Init error: ${exception.message}"
                     }
                 }
             )
         } catch (e: Exception) {
             Log.e("MSAL", "Failed to initialize MSAL", e)
+            _authError.value = "Config error: ${e.message}"
         }
     }
 
-    private fun loadAccounts() {
-        msalApp?.getAccounts(object : IPublicClientApplication.LoadAccountsCallback {
-            override fun onTaskCompleted(result: List<IAccount>) {
-                if (result.isNotEmpty()) {
-                    _account.value = result.first()
-                } else {
-                    _account.value = null
-                }
+    private fun loadAccount() {
+        msalApp?.getCurrentAccountAsync(object : ISingleAccountPublicClientApplication.CurrentAccountCallback {
+            override fun onAccountLoaded(activeAccount: IAccount?) {
+                _account.value = activeAccount
             }
-
+            override fun onAccountChanged(priorAccount: IAccount?, currentAccount: IAccount?) {
+                _account.value = currentAccount
+            }
             override fun onError(exception: MsalException) {
-                Log.e("MSAL", "Error loading accounts: ", exception)
+                Log.e("MSAL", "Error loading account", exception)
                 _account.value = null
             }
         })
     }
 
-    suspend fun acquireTokenInteractive(activity: Activity): String? {
-        val app = msalApp ?: return null
+    suspend fun acquireTokenInteractive(activity: Activity): Result<String> {
+        val app = msalApp
+        if (app == null) {
+            val err = _authError.value ?: "MSAL app not initialized"
+            return Result.failure(Exception(err))
+        }
+        
+        Log.i("MSAL", "MSAL login started")
         return suspendCancellableCoroutine { continuation ->
-            val parameters = AcquireTokenParameters.Builder()
-                .startAuthorizationFromActivity(activity)
-                .withScopes(scopes.toList())
-                .withCallback(object : AuthenticationCallback {
-                    override fun onSuccess(authenticationResult: IAuthenticationResult) {
-                        _account.value = authenticationResult.account
-                        continuation.resume(authenticationResult.accessToken)
-                    }
+            var resumed = false
+            try {
+                val parameters = AcquireTokenParameters.Builder()
+                    .startAuthorizationFromActivity(activity)
+                    .withScopes(scopes.toList())
+                    .withCallback(object : AuthenticationCallback {
+                        override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                            Log.i("MSAL", "MSAL login success")
+                            _account.value = authenticationResult.account
+                            if (!resumed) {
+                                resumed = true
+                                continuation.resume(Result.success(authenticationResult.accessToken))
+                            }
+                        }
 
-                    override fun onError(exception: MsalException) {
-                        Log.e("MSAL", "Interactive Auth failed", exception)
-                        continuation.resume(null)
-                    }
+                        override fun onError(exception: MsalException) {
+                            Log.e("MSAL", "Interactive Auth failed", exception)
+                            val displayMsg = when {
+                                exception.errorCode == "user_cancelled" -> "Login dibatalkan oleh pengguna."
+                                exception.errorCode == "no_network_connection" -> "Gagal: Tidak ada koneksi internet."
+                                exception.errorCode == "invalid_client" -> "Gagal: Client ID tidak valid."
+                                exception.message?.contains("redirect_uri") == true -> "Gagal: Redirect URI mismatch. Pastikan Signature Hash sesuai."
+                                else -> "Login gagal: ${exception.message}"
+                            }
+                            if (!resumed) {
+                                resumed = true
+                                continuation.resume(Result.failure(Exception(displayMsg)))
+                            }
+                        }
 
-                    override fun onCancel() {
-                        Log.i("MSAL", "Interactive Auth canceled")
-                        continuation.resume(null)
-                    }
-                })
-                .build()
+                        override fun onCancel() {
+                            Log.i("MSAL", "Interactive Auth canceled")
+                            if (!resumed) {
+                                resumed = true
+                                continuation.resume(Result.failure(Exception("Login dibatalkan.")))
+                            }
+                        }
+                    })
+                    .build()
 
-            app.acquireToken(parameters)
+                app.acquireToken(parameters)
+            } catch (e: Exception) {
+                if (!resumed) {
+                    resumed = true
+                    continuation.resume(Result.failure(e))
+                }
+            }
         }
     }
 
     suspend fun acquireTokenSilent(): String? {
         val app = msalApp ?: return null
         val currentAccount = _account.value ?: return null
+        Log.i("MSAL", "MSAL token silent started")
         return suspendCancellableCoroutine { continuation ->
-            val parameters = AcquireTokenSilentParameters.Builder()
-                .fromAuthority(app.configuration.defaultAuthority.authorityURL.toString())
-                .withScopes(scopes.toList())
-                .forAccount(currentAccount)
-                .withCallback(object : SilentAuthenticationCallback {
-                    override fun onSuccess(authenticationResult: IAuthenticationResult) {
-                        continuation.resume(authenticationResult.accessToken)
-                    }
+            var resumed = false
+            try {
+                val parameters = AcquireTokenSilentParameters.Builder()
+                    .fromAuthority(app.configuration.defaultAuthority.authorityURL.toString())
+                    .withScopes(scopes.toList())
+                    .forAccount(currentAccount)
+                    .withCallback(object : SilentAuthenticationCallback {
+                        override fun onSuccess(authenticationResult: IAuthenticationResult) {
+                            if (!resumed) {
+                                resumed = true
+                                continuation.resume(authenticationResult.accessToken)
+                            }
+                        }
 
-                    override fun onError(exception: MsalException) {
-                        Log.e("MSAL", "Silent Auth failed", exception)
-                        _account.value = null
-                        continuation.resume(null)
-                    }
-                })
-                .build()
-            
-            app.acquireTokenSilentAsync(parameters)
+                        override fun onError(exception: MsalException) {
+                            Log.e("MSAL", "Silent Auth failed", exception)
+                            if (!resumed) {
+                                resumed = true
+                                continuation.resume(null)
+                            }
+                        }
+                    })
+                    .build()
+                
+                app.acquireTokenSilentAsync(parameters)
+            } catch (e: Exception) {
+                if (!resumed) {
+                    resumed = true
+                    continuation.resume(null)
+                }
+            }
         }
     }
 
     suspend fun signOut(): Boolean {
         val app = msalApp ?: return false
-        val currentAccount = _account.value ?: return true
         return suspendCancellableCoroutine { continuation ->
-            app.removeAccount(currentAccount, object : IMultipleAccountPublicClientApplication.RemoveAccountCallback {
-                override fun onRemoved() {
+            app.signOut(object : ISingleAccountPublicClientApplication.SignOutCallback {
+                override fun onSignOut() {
                     _account.value = null
                     continuation.resume(true)
                 }
@@ -195,3 +248,4 @@ class MicrosoftAuthService(private val context: Context) {
         }
     }
 }
+

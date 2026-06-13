@@ -571,13 +571,26 @@ class SettingsViewModel(
     
     fun signInMicrosoft(activity: Activity) {
         viewModelScope.launch {
-            microsoftAuthService.acquireTokenInteractive(activity)
+            val err = microsoftAuthService.authError.value
+            if (err != null && err.contains("Client ID is empty")) {
+                _uiState.update { it.copy(testError = "Client ID kosong. Silakan simpan Microsoft Client ID terlebih dahulu.") }
+                return@launch
+            }
+            
+            _uiState.update { it.copy(testError = null, testResult = null) }
+            val result = microsoftAuthService.acquireTokenInteractive(activity)
+            result.onFailure { exception ->
+                _uiState.update { it.copy(testError = exception.message ?: "Login gagal") }
+            }.onSuccess { 
+                _uiState.update { it.copy(testResult = "Berhasil koneksi ke Outlook!") }
+            }
         }
     }
 
     fun signOutMicrosoft() {
         viewModelScope.launch {
             microsoftAuthService.signOut()
+            _uiState.update { it.copy(testResult = "Berhasil disconnect dari Outlook", testError = null) }
         }
     }
 

@@ -22,7 +22,7 @@ data class ReasoningConfig(
 data class VisionContent(
     val type: String,
     val text: String? = null,
-    @Json(name = "image_url") val imageUrl: VisionImageUrl? = null
+    @param:Json(name = "image_url") val imageUrl: VisionImageUrl? = null
 )
 
 @JsonClass(generateAdapter = true)
