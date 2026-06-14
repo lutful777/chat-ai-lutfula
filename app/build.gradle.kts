@@ -1,5 +1,3 @@
-import java.net.URLEncoder
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -28,9 +26,35 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     
-    // Fallback if not configured in .env
-    val signatureHashFallback = "EfKLa/C+05Hz/xBbYz1eP6zecJ0="
-    val rawSignatureHash = project.findProperty("MICROSOFT_SIGNATURE_HASH")?.toString()?.takeIf { it.isNotBlank() && it != "YOUR_BASE64_SIGNATURE_HASH" } ?: signatureHashFallback
+    // MSAL BrowserTabActivity must use the raw APK signature hash.
+    // Do not URL-encode this manifest placeholder; MSAL checks it as android:path.
+    val signatureHashFallback = "11bYT9aNs+E0IEoY5eR3AwN8mEE="
+
+    fun cleanSignatureHash(value: String?): String? {
+      val cleaned = value
+        ?.trim()
+        ?.removeSurrounding("\"")
+        ?.removeSurrounding("'")
+      return cleaned?.takeIf { it.isNotBlank() && it != "YOUR_BASE64_SIGNATURE_HASH" }
+    }
+
+    fun readDotEnvValue(key: String): String? {
+      val envFile = rootProject.file(".env")
+      if (!envFile.exists()) return null
+      val prefix = "$key="
+      return envFile
+        .readLines()
+        .asSequence()
+        .map { it.trim() }
+        .firstOrNull { it.startsWith(prefix) }
+        ?.substringAfter("=")
+        ?.let { cleanSignatureHash(it) }
+    }
+
+    val rawSignatureHash = cleanSignatureHash(project.findProperty("MICROSOFT_SIGNATURE_HASH")?.toString())
+      ?: cleanSignatureHash(System.getenv("MICROSOFT_SIGNATURE_HASH"))
+      ?: readDotEnvValue("MICROSOFT_SIGNATURE_HASH")
+      ?: signatureHashFallback
     manifestPlaceholders["msalSignatureHash"] = rawSignatureHash
   }
 
