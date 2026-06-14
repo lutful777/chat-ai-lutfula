@@ -43,7 +43,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="msauth"
-                    android:host="com.aistudio.aichatmobile.xmqpr"
+                    android:host="${applicationId}"
                     android:path="/${msalSignatureHash}" />
             </intent-filter>
         </activity>
