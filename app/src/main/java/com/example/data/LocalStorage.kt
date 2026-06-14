@@ -14,14 +14,6 @@ class LocalStorage(context: Context) {
         }
     }
 
-    private fun cleanConfigValue(value: String?): String {
-        return value
-            ?.trim()
-            ?.removeSurrounding("\"")
-            ?.removeSurrounding("'")
-            .orEmpty()
-    }
-
     fun saveInstruction(instruction: String): Boolean {
         val current = getInstruction()
         val newInst = if (current.isEmpty()) instruction else "$current\n$instruction"
@@ -33,19 +25,19 @@ class LocalStorage(context: Context) {
     }
 
     fun getMicrosoftClientId(): String {
-        return cleanConfigValue(prefs.getString("microsoft_client_id", ""))
+        return prefs.getString("microsoft_client_id", "") ?: ""
     }
 
     fun saveMicrosoftClientId(clientId: String) {
-        prefs.edit().putString("microsoft_client_id", cleanConfigValue(clientId)).apply()
+        prefs.edit().putString("microsoft_client_id", clientId).apply()
     }
 
     fun getMicrosoftTenant(): String {
-        return cleanConfigValue(prefs.getString("microsoft_tenant", "common")).ifBlank { "common" }
+        return prefs.getString("microsoft_tenant", "common") ?: "common"
     }
 
     fun saveMicrosoftTenant(tenant: String) {
-        val t = cleanConfigValue(tenant).ifBlank { "common" }
+        val t = if (tenant.isBlank()) "common" else tenant
         prefs.edit().putString("microsoft_tenant", t).apply()
     }
 }

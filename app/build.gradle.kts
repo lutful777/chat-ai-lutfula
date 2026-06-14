@@ -27,36 +27,11 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-    // MSAL redirect URI must use exactly the same signature hash in:
-    // 1. Azure App Registration redirect URI
-    // 2. AndroidManifest BrowserTabActivity intent-filter
-    // 3. MicrosoftAuthService generated auth_config_single_account.json
+    
+    // Fallback if not configured in .env
     val signatureHashFallback = "EfKLa/C+05Hz/xBbYz1eP6zecJ0="
-    fun cleanSecretValue(value: String?): String? {
-      val cleaned = value
-        ?.trim()
-        ?.removeSurrounding("\"")
-        ?.removeSurrounding("'")
-      return cleaned?.takeIf { it.isNotBlank() && it != "YOUR_BASE64_SIGNATURE_HASH" }
-    }
-    fun readDotEnvValue(key: String): String? {
-      val envFile = rootProject.file(".env")
-      if (!envFile.exists()) return null
-      val prefix = "$key="
-      return envFile
-        .readLines()
-        .map { it.trim() }
-        .firstOrNull { it.startsWith(prefix) }
-        ?.substringAfter("=")
-        ?.let { cleanSecretValue(it) }
-    }
-    val rawSignatureHash = cleanSecretValue(project.findProperty("MICROSOFT_SIGNATURE_HASH")?.toString())
-      ?: cleanSecretValue(System.getenv("MICROSOFT_SIGNATURE_HASH"))
-      ?: readDotEnvValue("MICROSOFT_SIGNATURE_HASH")
-      ?: signatureHashFallback
-    val encodedSignatureHash = URLEncoder.encode(rawSignatureHash, "UTF-8")
-    manifestPlaceholders["msalSignatureHash"] = encodedSignatureHash
+    val rawSignatureHash = project.findProperty("MICROSOFT_SIGNATURE_HASH")?.toString()?.takeIf { it.isNotBlank() && it != "YOUR_BASE64_SIGNATURE_HASH" } ?: signatureHashFallback
+    manifestPlaceholders["msalSignatureHash"] = rawSignatureHash
   }
 
   signingConfigs {

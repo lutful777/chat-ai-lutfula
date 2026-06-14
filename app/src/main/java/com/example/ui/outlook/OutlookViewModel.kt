@@ -46,9 +46,7 @@ class OutlookViewModel(
         }
         viewModelScope.launch {
             graphRepository.error.collectLatest { error ->
-                if (error != null) {
-                    _uiState.value = _uiState.value.copy(error = error)
-                }
+                _uiState.value = _uiState.value.copy(error = error)
             }
         }
         viewModelScope.launch {
@@ -59,41 +57,25 @@ class OutlookViewModel(
     }
 
     fun loadEmails(folderId: String = "inbox") {
-        _uiState.value = _uiState.value.copy(selectedFolder = folderId, error = null)
+        _uiState.value = _uiState.value.copy(selectedFolder = folderId)
         viewModelScope.launch {
             graphRepository.loadLatestEmails(folderId)
         }
     }
 
     fun searchEmails(query: String) {
-        val trimmedQuery = query.trim()
-        if (trimmedQuery.isBlank()) {
+        if (query.isBlank()) {
             loadEmails(_uiState.value.selectedFolder)
             return
         }
-        _uiState.value = _uiState.value.copy(error = null)
         viewModelScope.launch {
-            if (trimmedQuery.contains("pdf", ignoreCase = true)) {
-                graphRepository.searchPdfEmails(_uiState.value.selectedFolder)
-            } else {
-                graphRepository.searchEmails(trimmedQuery)
-            }
+            graphRepository.searchEmails(query)
         }
     }
 
     fun signInMicrosoft(activity: android.app.Activity) {
-        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
-            val result = microsoftAuthService.acquireTokenInteractive(activity)
-            result.onSuccess {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = null)
-                loadEmails(_uiState.value.selectedFolder)
-            }.onFailure { exception ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = exception.message ?: "Login Microsoft gagal."
-                )
-            }
+            microsoftAuthService.acquireTokenInteractive(activity)
         }
     }
 

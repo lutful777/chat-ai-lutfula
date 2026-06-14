@@ -330,7 +330,7 @@ class SettingsViewModel(
     fun testConnection() {
         if (!validateTextSettings()) return
         
-        _uiState.update { it.copy(testResult = null, testError = null) }
+        _uiState.update { it.copy(isTesting = true, testResult = null, testError = null) }
         
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -366,7 +366,7 @@ class SettingsViewModel(
 
                 withContext(Dispatchers.Main) {
                     if (response.isSuccessful) {
-                        _uiState.update { it.copy(testResult = "Connection successful") }
+                        _uiState.update { it.copy(isTesting = false, testResult = "Connection successful") }
                     } else {
                         val errorMsg = when (response.code) {
                             401 -> "401 Unauthorized - Check your API key."
@@ -375,12 +375,12 @@ class SettingsViewModel(
                             429 -> "429 Rate Limit Exceeded - Sending too many requests."
                             else -> "HTTP ${response.code}: $responseBodyStr"
                         }
-                        _uiState.update { it.copy(testError = errorMsg) }
+                        _uiState.update { it.copy(isTesting = false, testError = errorMsg) }
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(testError = "Network Error or CORS/proxy: ${e.message}") }
+                    _uiState.update { it.copy(isTesting = false, testError = "Network Error or CORS/proxy: ${e.message}") }
                 }
             }
         }
@@ -654,3 +654,4 @@ class SettingsViewModel(
         }
     }
 }
+
