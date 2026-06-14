@@ -214,17 +214,17 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, OutlineDark),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlue),
-                        enabled = !uiState.isTesting && uiState.testResult == null && uiState.testError == null
+                        enabled = !uiState.isTextTesting && uiState.textTestResult == null && uiState.textTestError == null
                     ) {
-                        if (uiState.isTesting) {
+                        if (uiState.isTextTesting) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = PrimaryBlue, strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Testing...", fontSize = 14.sp, color = PrimaryBlue)
                         } else Text("Test Connection", fontSize = 14.sp)
                     }
 
-                    if (uiState.testError != null) Text("Error: ${uiState.testError}", color = Color.Red, fontSize = 12.sp)
-                    if (uiState.testResult != null) Text("Success: ${uiState.testResult}", color = SuccessGreen, fontSize = 12.sp)
+                    if (uiState.textTestError != null) Text("Error: ${uiState.textTestError}", color = Color.Red, fontSize = 12.sp)
+                    if (uiState.textTestResult != null) Text("Success: ${uiState.textTestResult}", color = SuccessGreen, fontSize = 12.sp)
                 }
             }
 
@@ -283,15 +283,18 @@ fun SettingsScreen(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                             modifier = Modifier.fillMaxWidth().height(48.dp),
-                            enabled = !uiState.isTesting
+                            enabled = !uiState.isMicrosoftTesting
                         ) { 
-                            if (uiState.isTesting) {
+                            if (uiState.isMicrosoftTesting) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Connecting...", color = Color.White)
                             } else Text("Connect Outlook", color = Color.White)
                         }
                     }
+                    
+                    if (uiState.microsoftError != null) Text("MSAL Error: ${uiState.microsoftError}", color = Color.Red, fontSize = 12.sp)
+                    if (uiState.microsoftResult != null) Text("Result: ${uiState.microsoftResult}", color = SuccessGreen, fontSize = 12.sp)
                 }
             }
 

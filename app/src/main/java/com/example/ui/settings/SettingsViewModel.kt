@@ -34,12 +34,15 @@ data class SettingsUiState(
     val supportsVision: Boolean = false,
     val savedModelsList: List<com.example.network.AiModelConfig> = emptyList(),
     val isSaved: Boolean = false,
-    val isTesting: Boolean = false,
-    val testResult: String? = null,
-    val testError: String? = null,
+    val isTextTesting: Boolean = false,
+    val textTestResult: String? = null,
+    val textTestError: String? = null,
     val requireValidation: Boolean = false,
     val validationError: String? = null,
     val microsoftAccount: IAccount? = null,
+    val isMicrosoftTesting: Boolean = false,
+    val microsoftResult: String? = null,
+    val microsoftError: String? = null,
     val microsoftClientId: String = "",
     val microsoftTenant: String = "common",
     
@@ -244,39 +247,39 @@ class SettingsViewModel(
 
     fun testMicrosoftProfile() {
         if (_uiState.value.microsoftAccount == null) {
-            _uiState.update { it.copy(testError = "Please connect Outlook account first.") }
+            _uiState.update { it.copy(microsoftError = "Please connect Outlook account first.") }
             return
         }
-        _uiState.update { it.copy(isTesting = true, testError = null, testResult = null) }
+        _uiState.update { it.copy(isMicrosoftTesting = true, microsoftError = null, microsoftResult = null) }
         viewModelScope.launch {
             val result = microsoftGraphRepository.loadProfile()
             if (microsoftGraphRepository.error.value == null) {
-                _uiState.update { it.copy(isTesting = false, testResult = "Profile: $result") }
+                _uiState.update { it.copy(isMicrosoftTesting = false, microsoftResult = "Profile: $result") }
             } else {
-                _uiState.update { it.copy(isTesting = false, testError = "Profile Test Failed: ${microsoftGraphRepository.error.value}") }
+                _uiState.update { it.copy(isMicrosoftTesting = false, microsoftError = "Profile Test Failed: ${microsoftGraphRepository.error.value}") }
             }
         }
     }
 
     fun testMicrosoftInbox() {
         if (_uiState.value.microsoftAccount == null) {
-            _uiState.update { it.copy(testError = "Please connect Outlook account first.") }
+            _uiState.update { it.copy(microsoftError = "Please connect Outlook account first.") }
             return
         }
-        _uiState.update { it.copy(isTesting = true, testError = null, testResult = null) }
+        _uiState.update { it.copy(isMicrosoftTesting = true, microsoftError = null, microsoftResult = null) }
         viewModelScope.launch {
             microsoftGraphRepository.loadLatestEmails()
             if (microsoftGraphRepository.error.value == null) {
                 val count = microsoftGraphRepository.emails.value.size
-                _uiState.update { it.copy(isTesting = false, testResult = "Successfully fetched $count recent emails.") }
+                _uiState.update { it.copy(isMicrosoftTesting = false, microsoftResult = "Successfully fetched $count recent emails.") }
             } else {
-                _uiState.update { it.copy(isTesting = false, testError = "Inbox Test Failed: ${microsoftGraphRepository.error.value}") }
+                _uiState.update { it.copy(isMicrosoftTesting = false, microsoftError = "Inbox Test Failed: ${microsoftGraphRepository.error.value}") }
             }
         }
     }
 
     fun clearTestResult() {
-        _uiState.update { it.copy(testResult = null, testError = null, validationError = null) }
+        _uiState.update { it.copy(textTestResult = null, textTestError = null, validationError = null) }
     }
 
     fun applyPreset(presetName: String) {
@@ -323,14 +326,14 @@ class SettingsViewModel(
             )
             settingsRepository.addSavedModel(modelConfig)
             
-            _uiState.update { it.copy(isSaved = true, validationError = null, testResult = null, testError = null, apiKey = if (keyToSave.isNotBlank()) MASKED_KEY_PLACEHOLDER else "") }
+            _uiState.update { it.copy(isSaved = true, validationError = null, textTestResult = null, textTestError = null, apiKey = if (keyToSave.isNotBlank()) MASKED_KEY_PLACEHOLDER else "") }
         }
     }
 
     fun testConnection() {
         if (!validateTextSettings()) return
         
-        _uiState.update { it.copy(isTesting = true, testResult = null, testError = null) }
+        _uiState.update { it.copy(isTextTesting = true, textTestResult = null, textTestError = null) }
         
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -366,7 +369,7 @@ class SettingsViewModel(
 
                 withContext(Dispatchers.Main) {
                     if (response.isSuccessful) {
-                        _uiState.update { it.copy(isTesting = false, testResult = "Connection successful") }
+                        _uiState.update { it.copy(isTextTesting = false, textTestResult = "Connection successful") }
                     } else {
                         val errorMsg = when (response.code) {
                             401 -> "401 Unauthorized - Check your API key."
@@ -375,12 +378,12 @@ class SettingsViewModel(
                             429 -> "429 Rate Limit Exceeded - Sending too many requests."
                             else -> "HTTP ${response.code}: $responseBodyStr"
                         }
-                        _uiState.update { it.copy(isTesting = false, testError = errorMsg) }
+                        _uiState.update { it.copy(isTextTesting = false, textTestError = errorMsg) }
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(isTesting = false, testError = "Network Error or CORS/proxy: ${e.message}") }
+                    _uiState.update { it.copy(isTextTesting = false, textTestError = "Network Error or CORS/proxy: ${e.message}") }
                 }
             }
         }
@@ -598,7 +601,7 @@ class SettingsViewModel(
             localStorage.saveMicrosoftTenant(tenant)
             microsoftAuthService.reinitializeMsal()
             
-            _uiState.update { it.copy(isTesting = true, testError = null, testResult = null) }
+            _uiState.update { it.copy(isMicrosoftTesting = true, microsoftError = null, microsoftResult = null) }
             
             // Wait for MSAL to initialize (up to 3 seconds)
             for (i in 0..30) {
@@ -610,17 +613,17 @@ class SettingsViewModel(
             
             val err = microsoftAuthService.authError.value
             if (err != null) {
-                _uiState.update { it.copy(isTesting = false, testError = err) }
+                _uiState.update { it.copy(isMicrosoftTesting = false, microsoftError = err) }
                 Toast.makeText(context, "MSAL Error: $err", Toast.LENGTH_LONG).show()
                 return@launch
             }
             
             val result = microsoftAuthService.acquireTokenInteractive(activity)
             result.onFailure { exception ->
-                _uiState.update { it.copy(isTesting = false, testError = exception.message ?: "Login gagal") }
+                _uiState.update { it.copy(isMicrosoftTesting = false, microsoftError = exception.message ?: "Login gagal") }
                 Toast.makeText(context, exception.message ?: "Login gagal", Toast.LENGTH_LONG).show()
             }.onSuccess { 
-                _uiState.update { it.copy(isTesting = false, testResult = "Berhasil koneksi ke Outlook!") }
+                _uiState.update { it.copy(isMicrosoftTesting = false, microsoftResult = "Berhasil koneksi ke Outlook!") }
                 Toast.makeText(context, "Outlook connected", Toast.LENGTH_SHORT).show()
             }
         }
@@ -629,7 +632,7 @@ class SettingsViewModel(
     fun signOutMicrosoft() {
         viewModelScope.launch {
             microsoftAuthService.signOut()
-            _uiState.update { it.copy(testResult = "Berhasil disconnect dari Outlook", testError = null) }
+            _uiState.update { it.copy(microsoftResult = "Berhasil disconnect dari Outlook", microsoftError = null) }
         }
     }
 

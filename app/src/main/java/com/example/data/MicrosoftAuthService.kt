@@ -55,7 +55,7 @@ class MicrosoftAuthService(private val context: Context) {
         } catch (e: Exception) {
             Log.e("MSAL", "Error getting signature hash", e)
         }
-        return "EfKLa/C+05Hz/xBbYz1eP6zecJ0=" // Fallback to debug keystore hash
+        return "p0faKYsmAJ1RKGOUaCxHLhlmMco=" // Fallback to debug keystore hash
     }
 
     private fun initializeMsal() {
