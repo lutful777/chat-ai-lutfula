@@ -50,9 +50,14 @@ class MicrosoftAuthService(private val context: Context) {
             .orEmpty()
     }
 
+    private fun isPlaceholderValue(value: String, placeholder: String): Boolean {
+        val cleaned = cleanConfigValue(value)
+        return cleaned.isBlank() || cleaned == placeholder
+    }
+
     private fun getConfiguredSignatureHash(): String {
         val configuredHash = cleanConfigValue(BuildConfig.MICROSOFT_SIGNATURE_HASH)
-        return if (configuredHash.isNotBlank() && configuredHash != "YOUR_BASE64_SIGNATURE_HASH") {
+        return if (!isPlaceholderValue(configuredHash, "YOUR_BASE64_SIGNATURE_HASH")) {
             configuredHash
         } else {
             fallbackSignatureHash
@@ -87,17 +92,17 @@ class MicrosoftAuthService(private val context: Context) {
 
     private fun initializeMsal() {
         try {
-            var clientId = localStorage.getMicrosoftClientId()
+            var clientId = cleanConfigValue(localStorage.getMicrosoftClientId())
             
-            if (clientId.isBlank() || clientId == "YOUR_MICROSOFT_CLIENT_ID") {
-                clientId = BuildConfig.MICROSOFT_CLIENT_ID
-                if (clientId.isBlank() || clientId == "YOUR_MICROSOFT_CLIENT_ID") {
+            if (isPlaceholderValue(clientId, "YOUR_MICROSOFT_CLIENT_ID")) {
+                clientId = cleanConfigValue(BuildConfig.MICROSOFT_CLIENT_ID)
+                if (isPlaceholderValue(clientId, "YOUR_MICROSOFT_CLIENT_ID")) {
                     _authError.value = "Client ID is empty. Please configure it in settings."
                     return // Cannot initialize without client ID
                 }
             }
             
-            val tenantId = localStorage.getMicrosoftTenant()
+            val tenantId = cleanConfigValue(localStorage.getMicrosoftTenant()).ifBlank { "common" }
 
             val redirectUri = getRedirectUriForAzure()
             val configuredSignatureHash = getConfiguredSignatureHash()
@@ -148,7 +153,7 @@ class MicrosoftAuthService(private val context: Context) {
 
                     override fun onError(exception: MsalException) {
                         Log.e("MSAL", "Error creating MSAL app", exception)
-                        _authError.value = "MSAL gagal diinisialisasi. Cek auth_config_single_account.json.\nError: ${exception.message}"
+                        _authError.value = "MSAL gagal diinisialisasi. Cek auth_config_single_account.json.\nRedirect URI: $redirectUri\nError: ${exception.message}"
                     }
                 }
             )
