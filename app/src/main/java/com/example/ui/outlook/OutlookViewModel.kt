@@ -46,7 +46,9 @@ class OutlookViewModel(
         }
         viewModelScope.launch {
             graphRepository.error.collectLatest { error ->
-                _uiState.value = _uiState.value.copy(error = error)
+                if (error != null) {
+                    _uiState.value = _uiState.value.copy(error = error)
+                }
             }
         }
         viewModelScope.launch {
@@ -57,25 +59,41 @@ class OutlookViewModel(
     }
 
     fun loadEmails(folderId: String = "inbox") {
-        _uiState.value = _uiState.value.copy(selectedFolder = folderId)
+        _uiState.value = _uiState.value.copy(selectedFolder = folderId, error = null)
         viewModelScope.launch {
             graphRepository.loadLatestEmails(folderId)
         }
     }
 
     fun searchEmails(query: String) {
-        if (query.isBlank()) {
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.isBlank()) {
             loadEmails(_uiState.value.selectedFolder)
             return
         }
+        _uiState.value = _uiState.value.copy(error = null)
         viewModelScope.launch {
-            graphRepository.searchEmails(query)
+            if (trimmedQuery.contains("pdf", ignoreCase = true)) {
+                graphRepository.searchPdfEmails(_uiState.value.selectedFolder)
+            } else {
+                graphRepository.searchEmails(trimmedQuery)
+            }
         }
     }
 
     fun signInMicrosoft(activity: android.app.Activity) {
+        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
-            microsoftAuthService.acquireTokenInteractive(activity)
+            val result = microsoftAuthService.acquireTokenInteractive(activity)
+            result.onSuccess {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = null)
+                loadEmails(_uiState.value.selectedFolder)
+            }.onFailure { exception ->
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = exception.message ?: "Login Microsoft gagal."
+                )
+            }
         }
     }
 
