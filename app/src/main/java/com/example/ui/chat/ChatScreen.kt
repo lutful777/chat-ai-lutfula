@@ -71,6 +71,38 @@ fun ChatScreen(
     var selectedFileName by remember { mutableStateOf<String?>(null) }
     var selectedFileIsImage by remember { mutableStateOf(false) }
     
+    var showAttachmentMenu by remember { mutableStateOf(false) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri -> 
+            if (uri != null) {
+                val contentResolver = localContext.contentResolver
+                val mimeType = contentResolver.getType(uri) ?: ""
+                
+                var name = "Image"
+                var size = 0L
+                contentResolver.query(uri, null, null, null, null)?.use { cursor: android.database.Cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) name = cursor.getString(nameIndex)
+                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (sizeIndex != -1) size = cursor.getLong(sizeIndex)
+                    }
+                }
+                
+                if (size > 20 * 1024 * 1024) {
+                    android.widget.Toast.makeText(localContext, "File terlalu besar (max 20MB)", android.widget.Toast.LENGTH_SHORT).show()
+                    return@rememberLauncherForActivityResult
+                }
+
+                selectedFileUri = uri
+                selectedFileName = name
+                selectedFileIsImage = true
+            }
+        }
+    )
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri -> 
@@ -80,7 +112,7 @@ fun ChatScreen(
                 
                 var name = "Unknown file"
                 var size = 0L
-                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                contentResolver.query(uri, null, null, null, null)?.use { cursor: android.database.Cursor ->
                     if (cursor.moveToFirst()) {
                         val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                         if (nameIndex != -1) name = cursor.getString(nameIndex)
@@ -419,11 +451,34 @@ fun ChatScreen(
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Filled.AttachFile, contentDescription = "Add file or photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Box {
+                            IconButton(
+                                onClick = { showAttachmentMenu = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.Filled.AttachFile, contentDescription = "Add file or photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            DropdownMenu(
+                                expanded = showAttachmentMenu,
+                                onDismissRequest = { showAttachmentMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Pilih Foto dari Galeri") },
+                                    onClick = {
+                                        showAttachmentMenu = false
+                                        imagePickerLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    },
+                                    leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Pilih File") },
+                                    onClick = {
+                                        showAttachmentMenu = false
+                                        filePickerLauncher.launch(arrayOf("*/*"))
+                                    },
+                                    leadingIcon = { Icon(Icons.Filled.Description, contentDescription = null) }
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         BasicTextField(

@@ -75,9 +75,6 @@ class ChatViewModel(
         viewModelScope.launch {
             chatRepository.allSessions.collect { sessions ->
                 _uiState.update { it.copy(sessions = sessions) }
-                if (sessions.isNotEmpty() && _uiState.value.currentSessionId == null) {
-                    selectSession(sessions.first().id)
-                }
             }
         }
         viewModelScope.launch {
