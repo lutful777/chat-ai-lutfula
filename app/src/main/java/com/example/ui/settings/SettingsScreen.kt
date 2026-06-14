@@ -59,41 +59,11 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             SettingsCard(title = "Chat API", icon = Icons.Default.Settings) {
-                OutlinedTextField(
-                    value = uiState.textProvider,
-                    onValueChange = viewModel::updateTextProvider,
-                    label = { Text("Provider") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = uiState.baseUrl,
-                    onValueChange = viewModel::updateBaseUrl,
-                    label = { Text("Base URL") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = uiState.textPath,
-                    onValueChange = viewModel::updateTextPath,
-                    label = { Text("Path") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = uiState.apiKey,
-                    onValueChange = viewModel::updateApiKey,
-                    label = { Text("API Key") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = uiState.modelName,
-                    onValueChange = viewModel::updateModelName,
-                    label = { Text("Model") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                OutlinedTextField(value = uiState.textProvider, onValueChange = viewModel::updateTextProvider, label = { Text("Provider") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = uiState.baseUrl, onValueChange = viewModel::updateBaseUrl, label = { Text("Base URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = uiState.textPath, onValueChange = viewModel::updateTextPath, label = { Text("Path") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = uiState.apiKey, onValueChange = viewModel::updateApiKey, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = uiState.modelName, onValueChange = viewModel::updateModelName, label = { Text("Model") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = viewModel::save) { Text("Save") }
                     OutlinedButton(onClick = viewModel::testConnection) { Text("Test Connection") }
@@ -104,25 +74,9 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Microsoft Outlook", icon = Icons.Default.Email) {
-                OutlinedTextField(
-                    value = uiState.microsoftClientId,
-                    onValueChange = viewModel::updateMicrosoftClientId,
-                    label = { Text("Microsoft Client ID") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = uiState.microsoftTenant,
-                    onValueChange = viewModel::updateMicrosoftTenant,
-                    label = { Text("Tenant, default: common") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Text(
-                    text = "Supported account types: personal Microsoft accounts and organizational accounts. Tenant common tetap dipakai.",
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
+                OutlinedTextField(value = uiState.microsoftClientId, onValueChange = viewModel::updateMicrosoftClientId, label = { Text("Microsoft Client ID") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = uiState.microsoftTenant, onValueChange = viewModel::updateMicrosoftTenant, label = { Text("Tenant, default: common") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Text("Supported account types: personal Microsoft accounts and organizational accounts. Tenant common tetap dipakai.", fontSize = 12.sp, color = Color.Gray)
                 Text(
                     text = "Redirect URI untuk Azure harus mengikuti build terbaru: msauth://com.aistudio.aichatmobile.xmqpr/<encoded-signature-hash>. Jangan pakai hash lama jika signing key berubah.",
                     fontSize = 12.sp,
@@ -132,10 +86,9 @@ fun SettingsScreen(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { viewModel.saveMicrosoftConfig(context) }) { Text("Save Microsoft") }
-                    OutlinedButton(
-                        enabled = activity != null && !uiState.isTesting,
-                        onClick = { activity?.let { viewModel.signInMicrosoft(it, context) } }
-                    ) { Text(if (uiState.isTesting) "Connecting..." else "Connect Outlook") }
+                    OutlinedButton(enabled = activity != null && !uiState.isTesting, onClick = { activity?.let { viewModel.signInMicrosoft(it, context) } }) {
+                        Text(if (uiState.isTesting) "Connecting..." else "Connect Outlook")
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(onClick = viewModel::testMicrosoftProfile) { Text("Test Profile") }
@@ -148,64 +101,14 @@ fun SettingsScreen(
             }
 
             SettingsCard(title = "Firecrawl Search", icon = Icons.Default.Cloud) {
-                OutlinedTextField(
-                    value = uiState.firecrawlApiKey,
-                    onValueChange = viewModel::updateFirecrawlApiKey,
-                    label = { Text("Firecrawl API Key") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                OutlinedTextField(value = uiState.firecrawlApiKey, onValueChange = viewModel::updateFirecrawlApiKey, label = { Text("Firecrawl API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = viewModel::saveFirecrawlKey) { Text("Save Firecrawl") }
                     OutlinedButton(onClick = viewModel::removeFirecrawlKey) { Text("Remove") }
                 }
             }
 
-            SettingsCard(title = "Create Photo API", icon = Icons.Default.Cloud) {
-                OutlinedTextField(value = uiState.createPhotoProvider, onValueChange = viewModel::updateCreatePhotoProvider, label = { Text("Provider") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.createPhotoBaseUrl, onValueChange = viewModel::updateCreatePhotoBaseUrl, label = { Text("Base URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.createPhotoEndpoint, onValueChange = viewModel::updateCreatePhotoEndpoint, label = { Text("Endpoint") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.createPhotoApiKey, onValueChange = viewModel::updateCreatePhotoApiKey, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.createPhotoModel, onValueChange = viewModel::updateCreatePhotoModel, label = { Text("Model") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = viewModel::saveCreatePhotoSettings) { Text("Save") }
-                    OutlinedButton(onClick = viewModel::testCreatePhotoConnection) { Text("Test") }
-                }
-                uiState.createPhotoTestError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                uiState.createPhotoTestResult?.let { Text(it, color = SuccessGreen) }
-            }
-
-            SettingsCard(title = "Edit Photo API", icon = Icons.Default.Cloud) {
-                OutlinedTextField(value = uiState.editPhotoProvider, onValueChange = viewModel::updateEditPhotoProvider, label = { Text("Provider") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.editPhotoBaseUrl, onValueChange = viewModel::updateEditPhotoBaseUrl, label = { Text("Base URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.editPhotoEndpoint, onValueChange = viewModel::updateEditPhotoEndpoint, label = { Text("Endpoint") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.editPhotoApiKey, onValueChange = viewModel::updateEditPhotoApiKey, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.editPhotoModel, onValueChange = viewModel::updateEditPhotoModel, label = { Text("Model") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = viewModel::saveEditPhotoSettings) { Text("Save") }
-                    OutlinedButton(onClick = viewModel::testEditPhotoConnection) { Text("Test") }
-                }
-                uiState.editPhotoTestError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                uiState.editPhotoTestResult?.let { Text(it, color = SuccessGreen) }
-            }
-
-            SettingsCard(title = "Photo to Video API", icon = Icons.Default.Cloud) {
-                OutlinedTextField(value = uiState.photoVideoProvider, onValueChange = viewModel::updatePhotoVideoProvider, label = { Text("Provider") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.photoVideoBaseUrl, onValueChange = viewModel::updatePhotoVideoBaseUrl, label = { Text("Base URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.photoVideoCreateEndpoint, onValueChange = viewModel::updatePhotoVideoCreateEndpoint, label = { Text("Create Endpoint") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.photoVideoStatusEndpoint, onValueChange = viewModel::updatePhotoVideoStatusEndpoint, label = { Text("Status Endpoint") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.photoVideoResultEndpoint, onValueChange = viewModel::updatePhotoVideoResultEndpoint, label = { Text("Result Endpoint") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.photoVideoApiKey, onValueChange = viewModel::updatePhotoVideoApiKey, label = { Text("API Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.photoVideoModel, onValueChange = viewModel::updatePhotoVideoModel, label = { Text("Model") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(value = uiState.photoVideoDuration, onValueChange = viewModel::updatePhotoVideoDuration, label = { Text("Duration") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = viewModel::savePhotoVideoSettings) { Text("Save") }
-                    OutlinedButton(onClick = viewModel::testPhotoVideoConnection) { Text("Test") }
-                }
-                uiState.photoVideoTestError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                uiState.photoVideoTestResult?.let { Text(it, color = SuccessGreen) }
-            }
-
+            Text("Media API settings tetap disimpan oleh SettingsViewModel. Tampilan ini dirapikan agar Outlook/MSAL tidak menampilkan redirect hash lama.", color = Color.Gray, fontSize = 12.sp)
             Spacer(Modifier.height(24.dp))
         }
     }
