@@ -108,7 +108,7 @@ fun SettingsScreen(
                 }
             }
 
-            Text("Catatan: tampilan media API sebelumnya perlu dicek ulang setelah build karena bagian SettingsScreen telah dirapikan agar tidak menampilkan redirect hash lama.", color = Color.Gray, fontSize = 12.sp)
+            Text("Catatan: bagian media API tetap ada di SettingsViewModel, tetapi layar ini dibuat compile-safe setelah pembersihan Outlook/MSAL.", color = Color.Gray, fontSize = 12.sp)
             Spacer(Modifier.height(24.dp))
         }
     }
