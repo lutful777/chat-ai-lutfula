@@ -38,9 +38,6 @@ data class SettingsUiState(
     val requireValidation: Boolean = false,
     val validationError: String? = null,
     
-    val firecrawlApiKey: String = "",
-    val apiNinjasApiKey: String = "",
-
     // Create Photo
     val createPhotoProvider: String = "",
     val createPhotoApiKey: String = "",
@@ -135,16 +132,12 @@ class SettingsViewModel(
             val key = settingsRepository.apiKey.value
             val path = settingsRepository.textPath.first()
             val model = settingsRepository.model.first()
-            val firecrawlKey = settingsRepository.firecrawlApiKey.value
-            val apiNinjasKey = settingsRepository.apiNinjasApiKey.value
             
             _uiState.update {
                 it.copy(
                     textProvider = provider.takeIf { p -> p.isNotEmpty() } ?: "bluesminds",
                     baseUrl = url,
                     apiKey = if (key.isNotBlank()) MASKED_KEY_PLACEHOLDER else "",
-                    firecrawlApiKey = if (firecrawlKey.isNotBlank()) MASKED_KEY_PLACEHOLDER else "",
-                    apiNinjasApiKey = if (apiNinjasKey.isNotBlank()) MASKED_KEY_PLACEHOLDER else "",
                     textPath = path.takeIf { p -> p.isNotEmpty() } ?: "/chat/completions",
                     modelName = model,
                     
@@ -183,46 +176,12 @@ class SettingsViewModel(
     fun updateTextProvider(provider: String) { _uiState.update { it.copy(textProvider = provider, isSaved = false) } }
     fun updateBaseUrl(url: String) { _uiState.update { it.copy(baseUrl = url, isSaved = false, validationError = null) } }
     fun updateApiKey(key: String) { _uiState.update { it.copy(apiKey = key, isSaved = false, validationError = null) } }
-    fun updateFirecrawlApiKey(key: String) { _uiState.update { it.copy(firecrawlApiKey = key, isSaved = false) } }
-    fun updateApiNinjasApiKey(key: String) { _uiState.update { it.copy(apiNinjasApiKey = key, isSaved = false) } }
     fun updateTextPath(path: String) { _uiState.update { it.copy(textPath = path, isSaved = false, validationError = null) } }
     fun updateModelName(model: String) { 
         val ext = _uiState.value.savedModelsList.find { it.modelName == model }
         _uiState.update { it.copy(modelName = model, supportsVision = ext?.supportsVision ?: false, isSaved = false, validationError = null) }
     }
     fun updateSupportsVision(supports: Boolean) { _uiState.update { it.copy(supportsVision = supports, isSaved = false) } }
-
-    fun saveFirecrawlKey() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            val keyToSave = if (state.firecrawlApiKey == MASKED_KEY_PLACEHOLDER) settingsRepository.firecrawlApiKey.value else state.firecrawlApiKey
-            settingsRepository.saveFirecrawlApiKey(keyToSave)
-            _uiState.update { it.copy(isSaved = true, firecrawlApiKey = if (keyToSave.isNotBlank()) MASKED_KEY_PLACEHOLDER else "") }
-        }
-    }
-
-    fun removeFirecrawlKey() {
-        viewModelScope.launch {
-            settingsRepository.removeFirecrawlApiKey()
-            _uiState.update { it.copy(firecrawlApiKey = "", isSaved = true) }
-        }
-    }
-
-    fun saveApiNinjasKey() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            val keyToSave = if (state.apiNinjasApiKey == MASKED_KEY_PLACEHOLDER) settingsRepository.apiNinjasApiKey.value else state.apiNinjasApiKey
-            settingsRepository.saveApiNinjasApiKey(keyToSave)
-            _uiState.update { it.copy(isSaved = true, apiNinjasApiKey = if (keyToSave.isNotBlank()) MASKED_KEY_PLACEHOLDER else "") }
-        }
-    }
-
-    fun removeApiNinjasKey() {
-        viewModelScope.launch {
-            settingsRepository.removeApiNinjasApiKey()
-            _uiState.update { it.copy(apiNinjasApiKey = "", isSaved = true) }
-        }
-    }
 
     fun clearTestResult() {
         _uiState.update { it.copy(textTestResult = null, textTestError = null, validationError = null) }

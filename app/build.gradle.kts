@@ -5,6 +5,7 @@ plugins {
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
+  alias(libs.plugins.secrets)
 }
 
 android {
@@ -26,23 +27,6 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-    fun secretValue(name: String): String {
-      val raw = System.getenv(name) ?: project.findProperty(name)?.toString() ?: ""
-      return raw.trim()
-        .removeSurrounding("\"")
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-    }
-
-    listOf(
-      "FIRECRAWL_API_KEY",
-      "API_NINJAS_API_KEY",
-      "METALS_API_KEY",
-      "METALS_DEV_API_KEY"
-    ).forEach { secretName ->
-      buildConfigField("String", secretName, "\"${secretValue(secretName)}\"")
-    }
   }
 
   signingConfigs {
@@ -81,6 +65,13 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+}
+
+// Configure the Secrets Gradle Plugin to use .env and .env.example files
+// to match the convention used in Web projects.
+secrets {
+  propertiesFileName = ".env"
+  defaultPropertiesFileName = ".env.example"
 }
 
 tasks.withType<Test> {

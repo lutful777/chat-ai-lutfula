@@ -161,37 +161,6 @@ class SettingsRepository(private val context: Context) {
     val memoryEnabled: Flow<Boolean> = context.dataStore.data.map { it[MEMORY_ENABLED] ?: true }
 
     val assistantLanguagePreference: Flow<String> = context.dataStore.data.map { it[ASSISTANT_LANGUAGE_PREFERENCE] ?: "id" }
-    
-    val firecrawlApiKey: kotlinx.coroutines.flow.MutableStateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow(secureSettingsManager.getFirecrawlApiKey())
-    val apiNinjasApiKey: kotlinx.coroutines.flow.MutableStateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow(secureSettingsManager.getApiNinjasApiKey())
-
-    suspend fun saveFirecrawlApiKey(key: String) {
-        if (key.isNotBlank()) {
-            secureSettingsManager.saveFirecrawlApiKey(key)
-        } else {
-            secureSettingsManager.clearFirecrawlApiKey()
-        }
-        firecrawlApiKey.value = secureSettingsManager.getFirecrawlApiKey()
-    }
-
-    suspend fun removeFirecrawlApiKey() {
-        secureSettingsManager.clearFirecrawlApiKey()
-        firecrawlApiKey.value = secureSettingsManager.getFirecrawlApiKey()
-    }
-
-    suspend fun saveApiNinjasApiKey(key: String) {
-        if (key.isNotBlank()) {
-            secureSettingsManager.saveApiNinjasApiKey(key)
-        } else {
-            secureSettingsManager.clearApiNinjasApiKey()
-        }
-        apiNinjasApiKey.value = secureSettingsManager.getApiNinjasApiKey()
-    }
-
-    suspend fun removeApiNinjasApiKey() {
-        secureSettingsManager.clearApiNinjasApiKey()
-        apiNinjasApiKey.value = secureSettingsManager.getApiNinjasApiKey()
-    }
 
     suspend fun updateModel(modelName: String) {
         context.dataStore.edit { prefs ->

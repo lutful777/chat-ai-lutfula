@@ -278,14 +278,8 @@ class ChatViewModel(
                 val baseUrl = settingsRepository.baseUrl.first()
                 val path = settingsRepository.textPath.first()
                 val modelName = settingsRepository.model.first()
-                val prefFirecrawlKey = settingsRepository.firecrawlApiKey.first()
                 val aiModels = settingsRepository.savedModelsList.first()
                 val supportsVision = aiModels.find { it.modelName == modelName }?.supportsVision ?: false
-
-                val firecrawlKey = if (prefFirecrawlKey.isNotBlank()) prefFirecrawlKey else com.example.BuildConfig.FIRECRAWL_API_KEY
-                
-                android.util.Log.d("ChatViewModel", "Firecrawl configured: ${firecrawlKey.isNotBlank() && firecrawlKey != "\"YOUR_FIRECRAWL_API_KEY\"" && firecrawlKey != "YOUR_FIRECRAWL_API_KEY"}")
-                android.util.Log.d("ChatViewModel", "Firecrawl key length: ${firecrawlKey.length}")
 
                 val langPref = settingsRepository.assistantLanguagePreference.first()
                 val memoryEnabled = settingsRepository.memoryEnabled.first()
@@ -441,8 +435,7 @@ class ChatViewModel(
                         } else {
                             cal.time
                         }
-                        val apiNinjasKey = settingsRepository.apiNinjasApiKey.first()
-                        val holidayInfo = holidayRepository.isWorkingDay(targetDate, apiNinjasKey)
+                        val holidayInfo = holidayRepository.isWorkingDay(targetDate)
                         searchContext += "Holiday API Result for the requested date:\n$holidayInfo\n\nInstruction: Use the Holiday API result to answer if it is a holiday/tanggal merah and the reason.\n\n"
                         useSearch = false
                     } catch (e: Exception) {
@@ -466,86 +459,91 @@ class ChatViewModel(
                 
                 if (urlsInMessage.isNotEmpty()) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking website...") }
-                    if (firecrawlKey.isBlank() || firecrawlKey == "\"YOUR_FIRECRAWL_API_KEY\"" || firecrawlKey == "YOUR_FIRECRAWL_API_KEY") {
-                        searchContext = "The user sent a link, but website reading is not configured. You MUST reply with exactly this text: 'Please add your Firecrawl API key in Settings first.'"
-                    } else {
-                        val scrapeUrl = urlsInMessage.first()
-                        try {
-                            val scrapeAdapter = moshi.adapter(com.example.network.FirecrawlScrapeRequest::class.java)
-                            val fRequestBody = scrapeAdapter.toJson(com.example.network.FirecrawlScrapeRequest(url = scrapeUrl)).toRequestBody("application/json; charset=utf-8".toMediaType())
+                    val scrapeUrl = urlsInMessage.first()
+                    try {
+                        val jsonBody = org.json.JSONObject().put("url", scrapeUrl).toString()
+                        val fRequestBody = jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType())
+                        
+                        val fRequest = Request.Builder()
+                            .url("https://chat-ai-lutfula.vercel.app/api/read-url")
+                            .post(fRequestBody)
+                            .build()
                             
-                            val fRequest = Request.Builder()
-                                .url("https://api.firecrawl.dev/v1/scrape")
-                                .addHeader("Authorization", "Bearer $firecrawlKey")
-                                .addHeader("Content-Type", "application/json")
-                                .post(fRequestBody)
-                                .build()
+                        val fResponse = okHttpClient.newCall(fRequest).execute()
+                        val fResponseStr = fResponse.body?.string()
+                        
+                        if (fResponse.isSuccessful && fResponseStr != null) {
+                            try {
+                                val jsonResponse = org.json.JSONObject(fResponseStr)
+                                // Handle if it has data.markdown like Firecrawl or just markdown
+                                val markdown = jsonResponse.optJSONObject("data")?.optString("markdown") ?: jsonResponse.optString("markdown", fResponseStr)
                                 
-                            val fResponse = okHttpClient.newCall(fRequest).execute()
-                            val fResponseStr = fResponse.body?.string()
-                            
-                            if (fResponse.isSuccessful && fResponseStr != null) {
-                                val fResponseAdapter = moshi.adapter(com.example.network.FirecrawlScrapeResponse::class.java)
-                                val fResult = fResponseAdapter.fromJson(fResponseStr)
-                                
-                                val markdown = fResult?.data?.markdown
-                                if (!markdown.isNullOrEmpty()) {
+                                if (markdown.isNotEmpty()) {
                                     val safeMarkdown = if (markdown.length > 10000) markdown.substring(0, 10000) + "...\n[Content Truncated]" else markdown
                                     searchContext = "Use the following scraped web content to answer the user's query:\n\nUrl: $scrapeUrl\nContent:\n$safeMarkdown\n\nInstructions: Answer based on the website content. If the user asked a specific question, answer it. If the user only sent a link without a specific question, summarize what the website is, its main function, and important details. NEVER say you cannot open links or browse websites. You MUST use this extracted text to provide your answer."
                                 } else {
-                                    searchContext = "I tried to read $scrapeUrl but it returned empty content. Explain to the user it might require login, is blocked, or has no readable text."
+                                    searchContext = "I tried to read $scrapeUrl but it returned empty. Explain to the user."
                                 }
-                            } else {
-                                val errCode = fResponse.code
-                                val errMsg = fResponseStr?.take(200) ?: "Unknown error"
-                                searchContext = "I tried to open $scrapeUrl, but it failed. Explain the real reason to the user clearly: HTTP $errCode - $errMsg"
+                            } catch (e: Exception) {
+                                // If response is not JSON, just pass it as text
+                                val safeMarkdown = if (fResponseStr.length > 10000) fResponseStr.substring(0, 10000) + "...\n[Content Truncated]" else fResponseStr
+                                searchContext = "Use the following scraped web content to answer the user's query:\n\nUrl: $scrapeUrl\nContent:\n$safeMarkdown\n\nInstructions: Answer based on the website content."
                             }
-                        } catch (e: Exception) {
-                            searchContext = "I tried to open $scrapeUrl, but Firecrawl returned an error. Explain the real reason to the user: ${e.message}"
+                        } else {
+                            val errCode = fResponse.code
+                            val errMsg = fResponseStr?.take(200) ?: "Unknown error"
+                            searchContext = "I tried to open $scrapeUrl, tapi gagal. HTTP $errCode - $errMsg"
                         }
+                    } catch (e: Exception) {
+                        searchContext = "I tried to open $scrapeUrl, tapi terjadi error: ${e.message}"
                     }
                     _uiState.update { it.copy(loadingText = null) }
                 } else if (useSearch) {
-                    if (firecrawlKey.isBlank() || firecrawlKey == "\"YOUR_FIRECRAWL_API_KEY\"" || firecrawlKey == "YOUR_FIRECRAWL_API_KEY") {
-                        searchContext = "Search/browser belum bisa digunakan karena Firecrawl API key belum dikonfigurasi. Saya tidak akan mengarang hasil website. Katakan dengan jujur bahwa search belum dikonfigurasi."
-                    } else {
-                        try {
-                            val searchAdapter = moshi.adapter(com.example.network.FirecrawlSearchRequest::class.java)
-                            val firecrawlRequest = com.example.network.FirecrawlSearchRequest(query = messageText)
-                            val firecrawlBody = searchAdapter.toJson(firecrawlRequest).toRequestBody("application/json; charset=utf-8".toMediaType())
+                    try {
+                        val queryUrlEncoded = java.net.URLEncoder.encode(messageText, "UTF-8")
+                        val fRequest = Request.Builder()
+                            .url("https://chat-ai-lutfula.vercel.app/api/search?q=$queryUrlEncoded")
+                            .get()
+                            .build()
                             
-                            val fRequest = Request.Builder()
-                                .url("https://api.firecrawl.dev/v1/search")
-                                .addHeader("Authorization", "Bearer $firecrawlKey")
-                                .addHeader("Content-Type", "application/json")
-                                .post(firecrawlBody)
-                                .build()
+                        val fResponse = okHttpClient.newCall(fRequest).execute()
+                        val fResponseStr = fResponse.body?.string()
+                        
+                        if (fResponse.isSuccessful && fResponseStr != null) {
+                            try {
+                                val jsonResponse = org.json.JSONObject(fResponseStr)
+                                val dataArray = jsonResponse.optJSONArray("data")
                                 
-                            val fResponse = okHttpClient.newCall(fRequest).execute()
-                            val fResponseStr = fResponse.body?.string()
-                            
-                            if (fResponse.isSuccessful && fResponseStr != null) {
-                                val fResponseAdapter = moshi.adapter(com.example.network.FirecrawlSearchResponse::class.java)
-                                val fResult = fResponseAdapter.fromJson(fResponseStr)
-                                
-                                val results = fResult?.data
-                                if (!results.isNullOrEmpty()) {
-                                    val topResults = results.take(3)
-                                    searchContext = "Use the following real-time search results to answer the user's query:\n\n" +
-                                            topResults.joinToString("\n\n") { "- Title: ${it.title}\n  Description: ${it.description}\n  URL: ${it.url}" }
-                                            
-                                    searchLinks = "\n\nSources:\n" + topResults.joinToString("\n") { "• ${it.title ?: "Link"}\n  ${it.url}" }
+                                if (dataArray != null && dataArray.length() > 0) {
+                                    val topResults = mutableListOf<String>()
+                                    val sourcesList = mutableListOf<String>()
+                                    val maxItems = minOf(3, dataArray.length())
+                                    
+                                    for (i in 0 until maxItems) {
+                                        val item = dataArray.optJSONObject(i)
+                                        if (item != null) {
+                                            val title = item.optString("title", "No Title")
+                                            val description = item.optString("description", "")
+                                            val url = item.optString("url", "")
+                                            topResults.add("- Title: $title\n  Description: $description\n  URL: $url")
+                                            sourcesList.add("• $title\n  $url")
+                                        }
+                                    }
+                                    searchContext = "Use the following real-time search results to answer the user's query:\n\n" + topResults.joinToString("\n\n")
+                                    searchLinks = "\n\nSources:\n" + sourcesList.joinToString("\n")
                                 } else {
-                                    searchContext = "Search/browser berjalan tetapi tidak ada hasil yang relevan. Jangan mengarang hasil."
+                                    searchContext = "Search berjalan tetapi tidak ada hasil relevan. Jangan mengarang."
                                 }
-                            } else {
-                                val errCode = fResponse.code
-                                val errMsg = fResponseStr ?: "Unknown error"
-                                searchContext = "Search/browser gagal digunakan (HTTP $errCode - $errMsg). Katakan dengan jujur bahwa search gagal."
+                            } catch (e: Exception) {
+                                searchContext = "Search results format error: ${e.message}"
                             }
-                        } catch (e: Exception) {
-                            searchContext = "Search/browser gagal digunakan (${e.message}). Katakan dengan jujur bahwa search gagal."
+                        } else {
+                            val errCode = fResponse.code
+                            val errMsg = fResponseStr ?: "Unknown error"
+                            searchContext = "Search gagal (HTTP $errCode - $errMsg). Katakan jujur."
                         }
+                    } catch (e: Exception) {
+                        searchContext = "Search gagal (${e.message}). Katakan jujur."
                     }
                 }
 

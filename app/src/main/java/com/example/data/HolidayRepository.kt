@@ -16,7 +16,7 @@ class HolidayRepository(private val okHttpClient: OkHttpClient) {
     // Use default country ID
     private val defaultCountry = "ID"
 
-    fun isWorkingDay(targetDate: Date, apiNinjasKeyFallback: String): String {
+    fun isWorkingDay(targetDate: Date): String {
         val sdf = SimpleDateFormat("yyyy-MM-dd")
         sdf.timeZone = TimeZone.getTimeZone("Asia/Jakarta")
         val dateStr = sdf.format(targetDate)
@@ -25,98 +25,26 @@ class HolidayRepository(private val okHttpClient: OkHttpClient) {
             return cache[dateStr] ?: ""
         }
 
-        var result = ""
-        var apiNinjasKey = com.example.BuildConfig.API_NINJAS_API_KEY
-        if (apiNinjasKey.isBlank() || apiNinjasKey == "YOUR_API_NINJAS_API_KEY" || apiNinjasKey == "\"YOUR_API_NINJAS_API_KEY\"") {
-            apiNinjasKey = apiNinjasKeyFallback
-        }
-
-        if (apiNinjasKey.isBlank() || apiNinjasKey == "YOUR_API_NINJAS_API_KEY" || apiNinjasKey == "\"YOUR_API_NINJAS_API_KEY\"") {
-            return "API Ninjas key belum dikonfigurasi."
-        }
-        
         try {
-                val request = Request.Builder()
-                    .url("https://api.api-ninjas.com/v1/isworkingday?country=$defaultCountry&date=$dateStr")
-                    .addHeader("X-Api-Key", apiNinjasKey)
-                    .build()
-                    
-                val response = okHttpClient.newCall(request).execute()
-                val body = response.body?.string()
+            val request = Request.Builder()
+                .url("https://chat-ai-lutfula.vercel.app/api/holiday?date=$dateStr&country=$defaultCountry")
+                .build()
                 
-                if (response.isSuccessful && body != null) {
-                    val json = JSONObject(body)
-                    val isWorkingDay = json.optBoolean("is_working_day", true)
-                    var holidayName = ""
-                    var resultStr = ""
-                    
-                    try {
-                        // Fetch public holidays
-                        val yearStr = dateStr.substring(0, 4)
-                        val cacheKeyHoliday = "holiday_$yearStr"
-                        val hBody = if (cache.containsKey(cacheKeyHoliday)) {
-                            cache[cacheKeyHoliday]
-                        } else {
-                            val hRequest = Request.Builder()
-                                .url("https://api.api-ninjas.com/v1/publicholidays?country=$defaultCountry&year=$yearStr")
-                                .addHeader("X-Api-Key", apiNinjasKey)
-                                .build()
-                            val hResponse = okHttpClient.newCall(hRequest).execute()
-                            val bodyText = hResponse.body?.string()
-                            if (hResponse.isSuccessful && bodyText != null) {
-                                cache[cacheKeyHoliday] = bodyText
-                                bodyText
-                            } else null
-                        }
-                        
-                        if (hBody != null) {
-                            val hArr = JSONArray(hBody)
-                            for (i in 0 until hArr.length()) {
-                                val obj = hArr.optJSONObject(i)
-                                if (obj != null && obj.optString("date") == dateStr) {
-                                    holidayName = obj.optString("name", "Public Holiday")
-                                    break
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // Ignore
-                    }
-                    
-                    if (holidayName.isNotEmpty()) {
-                        resultStr = "Tanggal merah nasional: Yes. Libur: $holidayName. Status isWorkingDay: $isWorkingDay."
-                    } else if (!isWorkingDay) {
-                        resultStr = "Tanggal merah nasional: Yes (Weekend/Non-working day). Status isWorkingDay: $isWorkingDay."
-                    } else {
-                        resultStr = "Tanggal merah nasional: No (Working Day)."
-                    }
-                    
-                    try {
-                        val yearStr = dateStr.substring(0, 4)
-                        val cacheKeyHoliday = "holiday_$yearStr"
-                        val hBody = cache[cacheKeyHoliday]
-                        if (hBody != null) {
-                            val hArr = JSONArray(hBody)
-                            var allHolidays = "\n\nDaftar hari libur tahun $yearStr:\n"
-                            for (i in 0 until hArr.length()) {
-                                val obj = hArr.optJSONObject(i)
-                                if (obj != null) {
-                                    allHolidays += "- ${obj.optString("date")}: ${obj.optString("name")}\n"
-                                }
-                            }
-                            resultStr += allHolidays
-                        }
-                    } catch (e: Exception) {
-                        // Ignore
-                    }
-                    
-                    cache[dateStr] = resultStr
-                    return resultStr
-                }
-            } catch (e: Exception) {
-                return "Gagal mengecek data libur. Periksa koneksi internet atau API key."
+            val response = okHttpClient.newCall(request).execute()
+            val body = response.body?.string()
+            
+            if (response.isSuccessful && body != null) {
+                // If your backend returns plain text, just return it. 
+                // Or if it returns JSON, parse it as needed. Since the backend handles it, let's just assume it returns text.
+                // Assuming it returns text directly:
+                val resultStr = JSONObject(body).optString("result", body) // If it returns JSON { result: "..." } or text
+                cache[dateStr] = resultStr
+                return resultStr
+            } else {
+                return "Backend realtime belum tersedia atau gagal mengambil data."
             }
-        
-        return result
+        } catch (e: Exception) {
+            return "Backend realtime belum tersedia atau gagal mengambil data."
+        }
     }
 }
