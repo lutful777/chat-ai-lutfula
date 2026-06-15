@@ -1,5 +1,6 @@
 package com.example.data
 
+import com.example.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -28,6 +29,8 @@ data class FiatRateResult(
 class FiatRateRepository(
     private val okHttpClient: OkHttpClient
 ) {
+    private val goldGramCode = "XAU_GRAM"
+
     private val currencyAliases = mapOf(
         "usd" to "USD",
         "dollar" to "USD",
@@ -78,9 +81,15 @@ class FiatRateRepository(
             .replace("_", " ")
 
         if (normalized.isBlank()) return null
-        if (Regex("\\b(btc|bitcoin|eth|ethereum|crypto|emas|gold|xau)\\b").containsMatchIn(normalized)) return null
+        if (Regex("\\b(btc|bitcoin|eth|ethereum|crypto)\\b").containsMatchIn(normalized)) return null
 
         val amount = Regex("\\b\\d+(?:\\.\\d+)?\\b").find(normalized)?.value?.toDoubleOrNull() ?: 1.0
+        val hasGold = Regex("\\b(emas|gold|xau)\\b").containsMatchIn(normalized)
+        val asksGoldPrice = hasGold && listOf("harga", "price", "idr", "rupiah", "gram", "sekarang", "latest", "cek").any { normalized.contains(it) }
+        if (asksGoldPrice) {
+            return FiatRateQuery(from = goldGramCode, to = "IDR", amount = amount)
+        }
+
         val currencyMatches = currencyAliases.entries
             .filter { (alias, _) -> Regex("\\b${Regex.escape(alias)}\\b").containsMatchIn(normalized) }
             .map { it.value }
@@ -108,6 +117,10 @@ class FiatRateRepository(
 
     fun getLatestRate(query: FiatRateQuery): Result<FiatRateResult> {
         return try {
+            if (query.from == goldGramCode) {
+                return getGoldGramIdr(query.amount)
+            }
+
             val url = "https://api.frankfurter.dev/v2/rate/${query.from}/${query.to}"
 
             val request = Request.Builder()
@@ -146,6 +159,10 @@ class FiatRateRepository(
     }
 
     fun formatFiatRateAnswer(result: FiatRateResult): String {
+        if (result.from == goldGramCode) {
+            return formatGoldAnswer(result)
+        }
+
         val amountText = formatMoney(result.amount, result.from)
         val convertedText = formatMoney(result.convertedAmount, result.to)
         val rateText = formatMoney(result.rate, result.to)
@@ -157,6 +174,77 @@ class FiatRateRepository(
             "Tanggal data: $dateText\n" +
             "Sumber: ${result.source}\n\n" +
             "Catatan: kurs bank/aplikasi jual-beli bisa sedikit berbeda karena spread dan biaya."
+    }
+
+    private fun getGoldGramIdr(amount: Double): Result<FiatRateResult> {
+        return try {
+            val key = readOptionalMetalsKey()
+            if (key.isBlank()) {
+                return Result.failure(Exception("METALS_DEV_API_KEY belum tersedia di build."))
+            }
+
+            val url = "https://api.metals.dev/v1/latest?api_key=$key&currency=IDR&unit=g"
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .addHeader("Accept", "application/json")
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            val body = response.body?.string()
+
+            if (!response.isSuccessful || body.isNullOrBlank()) {
+                return Result.failure(Exception("Metals.dev HTTP ${response.code}: ${body?.take(200) ?: "empty response"}"))
+            }
+
+            val json = JSONObject(body)
+            if (json.optString("status") == "failure") {
+                return Result.failure(Exception(json.optString("error_message", "Metals.dev error")))
+            }
+
+            val goldPerGramIdr = json.getJSONObject("metals").getDouble("gold")
+            val timestamp = json.optString("timestamp", null)
+
+            Result.success(
+                FiatRateResult(
+                    from = goldGramCode,
+                    to = "IDR",
+                    amount = amount,
+                    convertedAmount = amount * goldPerGramIdr,
+                    rate = goldPerGramIdr,
+                    date = timestamp,
+                    source = "Metals.dev"
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun formatGoldAnswer(result: FiatRateResult): String {
+        val idrFormat = NumberFormat.getCurrencyInstance(Locale("in", "ID"))
+        idrFormat.maximumFractionDigits = 0
+
+        val amountText = if (result.amount == 1.0) "1 gram emas" else "${String.format(Locale.US, "%.4f", result.amount).trimEnd('0').trimEnd('.')} gram emas"
+        val convertedText = idrFormat.format(result.convertedAmount)
+        val perGramText = idrFormat.format(result.rate)
+        val dateText = result.date ?: formatUtcDate()
+
+        return "Harga emas terbaru:\n\n" +
+            "$amountText = $convertedText\n" +
+            "1 gram emas = $perGramText\n" +
+            "Update: $dateText\n" +
+            "Sumber: ${result.source}\n\n" +
+            "Catatan: harga toko emas bisa berbeda karena spread, biaya cetak, pajak, dan merek."
+    }
+
+    private fun readOptionalMetalsKey(): String {
+        return try {
+            val fieldName = listOf("METALS", "DEV", "API", "KEY").joinToString("_")
+            BuildConfig::class.java.getDeclaredField(fieldName).get(null)?.toString()?.trim()?.trim('"') ?: ""
+        } catch (_: Exception) {
+            ""
+        }
     }
 
     private fun formatMoney(value: Double, currency: String): String {
