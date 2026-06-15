@@ -79,67 +79,6 @@ secrets {
   defaultPropertiesFileName = ".env.example"
 }
 
-tasks.register("patchRealtimeSearchLogic") {
-  doLast {
-    val chatViewModelFile = file("src/main/java/com/example/ui/chat/ChatViewModel.kt")
-    if (!chatViewModelFile.exists()) return@doLast
-
-    val current = chatViewModelFile.readText()
-    val start = current.indexOf("    private fun shouldUseRealtimeSearch(messageText: String): Boolean {")
-    val end = current.indexOf("    private suspend fun handleMemoryCommand", start)
-    if (start < 0 || end < 0) return@doLast
-
-    val replacement = """
-    private fun shouldUseRealtimeSearch(messageText: String): Boolean {
-        val textLower = messageText.lowercase().trim()
-
-        val explicitSearchKeywords = listOf(
-            "cari", "search", "carikan", "cek", "chek", "check",
-            "berita", "news", "berita terbaru", "update terbaru",
-            "hari ini", "sekarang", "live", "real time", "realtime",
-            "viral", "trending", "positif", "negatif",
-            "sentimen", "sentiment", "kenapa naik", "kenapa turun",
-            "akan naik", "akan turun", "prediksi hari ini"
-        )
-
-        val cryptoKeywords = listOf(
-            "btc", "bitcoin", "eth", "ethereum", "crypto", "usdt",
-            "xrp", "sol", "solana", "bnb", "doge", "dogecoin",
-            "ada", "cardano", "ton", "trx", "tron", "avax",
-            "matic", "pol", "link", "ltc", "dot", "shib"
-        )
-
-        val goldKeywords = listOf("gold", "xau", "emas")
-
-        val currencyKeywords = listOf(
-            "mata uang", "kurs", "forex", "fx", "currency",
-            "usd", "idr", "eur", "gbp", "jpy", "aud", "cad", "chf",
-            "cny", "yuan", "myr", "thb", "php", "inr", "krw",
-            "rub", "aed", "sar", "dollar", "dolar", "rupiah", "dxy"
-        )
-
-        if (cryptoKeywords.any { textLower.contains(it) }) return true
-        if (goldKeywords.any { textLower.contains(it) }) return true
-        if (currencyKeywords.any { textLower.contains(it) } && explicitSearchKeywords.any { textLower.contains(it) }) return true
-        if (explicitSearchKeywords.any { textLower.contains(it) }) return true
-
-        val currentDataKeywords = listOf(
-            "cuaca", "weather", "jadwal", "schedule", "rilis terbaru",
-            "subscription", "pricing", "harga paket",
-            "status server", "down", "error hari ini"
-        )
-        return currentDataKeywords.any { textLower.contains(it) }
-    }
-    """.trimIndent() + "\n"
-
-    chatViewModelFile.writeText(current.substring(0, start) + replacement + current.substring(end))
-  }
-}
-
-tasks.matching { it.name == "preBuild" }.configureEach {
-  dependsOn("patchRealtimeSearchLogic")
-}
-
 tasks.withType<Test> {
     systemProperty("java.awt.headless", "true")
 }
@@ -199,4 +138,8 @@ dependencies {
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
+  debugImplementation(libs.androidx.compose.ui.tooling)
+  "ksp"(libs.androidx.room.compiler)
+  "ksp"(libs.moshi.kotlin.codegen)
 }
