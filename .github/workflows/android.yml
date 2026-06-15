@@ -35,6 +35,8 @@ jobs:
       run: gradle wrapper --gradle-version 9.3.1
 
     - name: Build with Gradle Wrapper
+      env:
+        API_NINJAS_API_KEY: ${{ secrets.API_NINJAS_API_KEY }}
       run: ./gradlew clean assembleDebug --stacktrace --no-configuration-cache
 
     - name: Upload APK
