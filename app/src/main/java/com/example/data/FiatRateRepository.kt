@@ -29,6 +29,7 @@ data class FiatRateResult(
 class FiatRateRepository(
     private val okHttpClient: OkHttpClient
 ) {
+    private val goldOunceCode = "XAU"
     private val goldGramCode = "XAU_GRAM"
 
     private val currencyAliases = mapOf(
@@ -85,15 +86,20 @@ class FiatRateRepository(
 
         val amount = Regex("\\b\\d+(?:\\.\\d+)?\\b").find(normalized)?.value?.toDoubleOrNull() ?: 1.0
         val hasGold = Regex("\\b(emas|gold|xau)\\b").containsMatchIn(normalized)
-        val asksGoldPrice = hasGold && listOf("harga", "price", "idr", "rupiah", "gram", "sekarang", "latest", "cek").any { normalized.contains(it) }
-        if (asksGoldPrice) {
-            return FiatRateQuery(from = goldGramCode, to = "IDR", amount = amount)
-        }
-
         val currencyMatches = currencyAliases.entries
             .filter { (alias, _) -> Regex("\\b${Regex.escape(alias)}\\b").containsMatchIn(normalized) }
             .map { it.value }
             .distinct()
+
+        if (hasGold) {
+            val quoteCurrency = currencyMatches.firstOrNull() ?: "USD"
+            val wantsGram = Regex("\\b(gram|gr|1g|per gram)\\b").containsMatchIn(normalized)
+            return if (wantsGram) {
+                FiatRateQuery(from = goldGramCode, to = quoteCurrency, amount = amount)
+            } else {
+                FiatRateQuery(from = goldOunceCode, to = quoteCurrency, amount = amount)
+            }
+        }
 
         if (currencyMatches.size >= 2) {
             return FiatRateQuery(from = currencyMatches[0], to = currencyMatches[1], amount = amount)
@@ -117,8 +123,8 @@ class FiatRateRepository(
 
     fun getLatestRate(query: FiatRateQuery): Result<FiatRateResult> {
         return try {
-            if (query.from == goldGramCode) {
-                return getGoldGramIdr(query.amount)
+            if (query.from == goldOunceCode || query.from == goldGramCode) {
+                return getGoldPrice(query.amount, query.to, query.from == goldGramCode)
             }
 
             val url = "https://api.frankfurter.dev/v2/rate/${query.from}/${query.to}"
@@ -159,7 +165,7 @@ class FiatRateRepository(
     }
 
     fun formatFiatRateAnswer(result: FiatRateResult): String {
-        if (result.from == goldGramCode) {
+        if (result.from == goldOunceCode || result.from == goldGramCode) {
             return formatGoldAnswer(result)
         }
 
@@ -176,14 +182,15 @@ class FiatRateRepository(
             "Catatan: kurs bank/aplikasi jual-beli bisa sedikit berbeda karena spread dan biaya."
     }
 
-    private fun getGoldGramIdr(amount: Double): Result<FiatRateResult> {
+    private fun getGoldPrice(amount: Double, quoteCurrency: String, perGram: Boolean): Result<FiatRateResult> {
         return try {
             val key = readOptionalMetalsKey()
             if (key.isBlank()) {
                 return Result.failure(Exception("METALS_DEV_API_KEY belum tersedia di build."))
             }
 
-            val url = "https://api.metals.dev/v1/latest?api_key=$key&currency=IDR&unit=g"
+            val unit = if (perGram) "g" else "toz"
+            val url = "https://api.metals.dev/v1/latest?api_key=$key&currency=$quoteCurrency&unit=$unit"
             val request = Request.Builder()
                 .url(url)
                 .get()
@@ -202,16 +209,16 @@ class FiatRateRepository(
                 return Result.failure(Exception(json.optString("error_message", "Metals.dev error")))
             }
 
-            val goldPerGramIdr = json.getJSONObject("metals").getDouble("gold")
+            val goldRate = json.getJSONObject("metals").getDouble("gold")
             val timestamp = json.optString("timestamp", null)
 
             Result.success(
                 FiatRateResult(
-                    from = goldGramCode,
-                    to = "IDR",
+                    from = if (perGram) goldGramCode else goldOunceCode,
+                    to = quoteCurrency,
                     amount = amount,
-                    convertedAmount = amount * goldPerGramIdr,
-                    rate = goldPerGramIdr,
+                    convertedAmount = amount * goldRate,
+                    rate = goldRate,
                     date = timestamp,
                     source = "Metals.dev"
                 )
@@ -222,20 +229,27 @@ class FiatRateRepository(
     }
 
     private fun formatGoldAnswer(result: FiatRateResult): String {
-        val idrFormat = NumberFormat.getCurrencyInstance(Locale("in", "ID"))
-        idrFormat.maximumFractionDigits = 0
+        val moneyFormat = if (result.to == "IDR") NumberFormat.getCurrencyInstance(Locale("in", "ID")) else NumberFormat.getCurrencyInstance(Locale.US)
+        if (result.to == "IDR" || result.to == "JPY" || result.to == "KRW") {
+            moneyFormat.maximumFractionDigits = 0
+        } else {
+            moneyFormat.maximumFractionDigits = 2
+        }
 
-        val amountText = if (result.amount == 1.0) "1 gram emas" else "${String.format(Locale.US, "%.4f", result.amount).trimEnd('0').trimEnd('.')} gram emas"
-        val convertedText = idrFormat.format(result.convertedAmount)
-        val perGramText = idrFormat.format(result.rate)
+        val isGram = result.from == goldGramCode
+        val unitText = if (isGram) "gram" else "troy ounce / XAU"
+        val amountText = if (result.amount == 1.0) "1 $unitText" else "${String.format(Locale.US, "%.4f", result.amount).trimEnd('0').trimEnd('.')} $unitText"
+        val convertedText = moneyFormat.format(result.convertedAmount)
+        val rateText = moneyFormat.format(result.rate)
         val dateText = result.date ?: formatUtcDate()
 
-        return "Harga emas terbaru:\n\n" +
+        return "Harga GOLD / XAU terbaru:\n\n" +
             "$amountText = $convertedText\n" +
-            "1 gram emas = $perGramText\n" +
+            "1 $unitText = $rateText\n" +
+            "Pair: ${if (isGram) "GOLD gram" else "XAU"}/${result.to}\n" +
             "Update: $dateText\n" +
             "Sumber: ${result.source}\n\n" +
-            "Catatan: harga toko emas bisa berbeda karena spread, biaya cetak, pajak, dan merek."
+            "Catatan: XAU biasanya berarti 1 troy ounce emas. Harga broker bisa sedikit berbeda karena spread dan likuiditas."
     }
 
     private fun readOptionalMetalsKey(): String {
