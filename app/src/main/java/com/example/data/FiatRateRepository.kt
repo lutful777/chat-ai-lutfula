@@ -108,10 +108,7 @@ class FiatRateRepository(
 
     fun getLatestRate(query: FiatRateQuery): Result<FiatRateResult> {
         return try {
-            val url = "https://api.frankfurter.app/latest" +
-                "?amount=${query.amount}" +
-                "&from=${query.from}" +
-                "&to=${query.to}"
+            val url = "https://api.frankfurter.dev/v2/rate/${query.from}/${query.to}"
 
             val request = Request.Builder()
                 .url(url)
@@ -127,18 +124,17 @@ class FiatRateRepository(
             }
 
             val json = JSONObject(body)
-            val amount = json.optDouble("amount", query.amount)
             val base = json.optString("base", query.from)
+            val quote = json.optString("quote", query.to)
             val date = json.optString("date", null)
-            val rates = json.getJSONObject("rates")
-            val convertedAmount = rates.getDouble(query.to)
-            val rate = if (amount != 0.0) convertedAmount / amount else convertedAmount
+            val rate = json.getDouble("rate")
+            val convertedAmount = query.amount * rate
 
             Result.success(
                 FiatRateResult(
                     from = base,
-                    to = query.to,
-                    amount = amount,
+                    to = quote,
+                    amount = query.amount,
                     convertedAmount = convertedAmount,
                     rate = rate,
                     date = date
