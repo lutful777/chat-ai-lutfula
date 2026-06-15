@@ -94,23 +94,34 @@ tasks.register("patchRealtimeSearchLogic") {
         val textLower = messageText.lowercase().trim()
 
         val explicitSearchKeywords = listOf(
-            "cari", "search", "carikan", "cek", "check",
-            "berita terbaru", "update terbaru", "hari ini", "sekarang",
-            "live", "real time", "realtime", "viral", "trending"
-        )
-        if (explicitSearchKeywords.any { textLower.contains(it) }) return true
-
-        val marketKeywords = listOf(
-            "btc", "bitcoin", "eth", "ethereum", "crypto",
-            "gold", "xau", "saham", "ihsg", "nasdaq", "dxy",
-            "fed", "fomc", "cpi", "ppi", "nfp"
-        )
-        val marketRealtimeIntent = listOf(
-            "berita", "news", "sentimen", "sentiment",
-            "positif", "negatif", "kenapa naik", "kenapa turun",
+            "cari", "search", "carikan", "cek", "chek", "check",
+            "berita", "news", "berita terbaru", "update terbaru",
+            "hari ini", "sekarang", "live", "real time", "realtime",
+            "viral", "trending", "positif", "negatif",
+            "sentimen", "sentiment", "kenapa naik", "kenapa turun",
             "akan naik", "akan turun", "prediksi hari ini"
         )
-        if (marketKeywords.any { textLower.contains(it) } && marketRealtimeIntent.any { textLower.contains(it) }) return true
+
+        val cryptoKeywords = listOf(
+            "btc", "bitcoin", "eth", "ethereum", "crypto", "usdt",
+            "xrp", "sol", "solana", "bnb", "doge", "dogecoin",
+            "ada", "cardano", "ton", "trx", "tron", "avax",
+            "matic", "pol", "link", "ltc", "dot", "shib"
+        )
+
+        val goldKeywords = listOf("gold", "xau", "emas")
+
+        val currencyKeywords = listOf(
+            "mata uang", "kurs", "forex", "fx", "currency",
+            "usd", "idr", "eur", "gbp", "jpy", "aud", "cad", "chf",
+            "cny", "yuan", "myr", "thb", "php", "inr", "krw",
+            "rub", "aed", "sar", "dollar", "dolar", "rupiah", "dxy"
+        )
+
+        if (cryptoKeywords.any { textLower.contains(it) }) return true
+        if (goldKeywords.any { textLower.contains(it) }) return true
+        if (currencyKeywords.any { textLower.contains(it) } && explicitSearchKeywords.any { textLower.contains(it) }) return true
+        if (explicitSearchKeywords.any { textLower.contains(it) }) return true
 
         val currentDataKeywords = listOf(
             "cuaca", "weather", "jadwal", "schedule", "rilis terbaru",
