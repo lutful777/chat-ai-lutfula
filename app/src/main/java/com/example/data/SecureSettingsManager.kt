@@ -33,11 +33,23 @@ class SecureSettingsManager(context: Context) {
         return sharedPreferences.getString("firecrawl_api_key", "") ?: ""
     }
 
+    fun saveApiNinjasApiKey(key: String) {
+        sharedPreferences.edit().putString("api_ninjas_api_key", key).apply()
+    }
+
+    fun getApiNinjasApiKey(): String {
+        return sharedPreferences.getString("api_ninjas_api_key", "") ?: ""
+    }
+
     fun clearTextApiKey() {
         sharedPreferences.edit().remove("text_api_key").apply()
     }
 
     fun clearFirecrawlApiKey() {
         sharedPreferences.edit().remove("firecrawl_api_key").apply()
+    }
+
+    fun clearApiNinjasApiKey() {
+        sharedPreferences.edit().remove("api_ninjas_api_key").apply()
     }
 }

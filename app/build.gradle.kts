@@ -27,6 +27,9 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    
+    val apiNinjasKey = System.getenv("API_NINJAS_API_KEY") ?: project.findProperty("API_NINJAS_API_KEY")?.toString() ?: ""
+    buildConfigField("String", "API_NINJAS_API_KEY", "\"$apiNinjasKey\"")
   }
 
   signingConfigs {

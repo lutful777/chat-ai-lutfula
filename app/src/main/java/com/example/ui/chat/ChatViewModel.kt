@@ -63,6 +63,7 @@ class ChatViewModel(
 ) : ViewModel() {
 
     private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
+    private val holidayRepository = com.example.data.HolidayRepository(okHttpClient)
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -306,6 +307,13 @@ class ChatViewModel(
                 val isGoldQuery = Regex("\\b(xau|gold|emas)\\b").containsMatchIn(textLower)
                 val isFiatQuery = Regex("\\b(usd|idr|eur|gbp|jpy|kurs|mata\\s*uang)\\b").containsMatchIn(textLower)
                 
+                val sdf = java.text.SimpleDateFormat("EEEE, dd MMMM yyyy HH:mm z", java.util.Locale("id", "ID"))
+                sdf.timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+                val currentDateStr = sdf.format(java.util.Date())
+                val tz = "Asia/Jakarta"
+                val country = "ID"
+                searchContext += "Tanggal dan waktu sekarang: $currentDateStr.\nTimezone: $tz.\nCountry code: $country.\nHoliday check: gunakan API Ninjas jika user bertanya tentang tanggal merah, libur, hari kerja, public holiday, Suro, Muharram, atau kalender.\n\n"
+                
                 var priceApiSuccess = false
                 var priceApiData = ""
                 var priceApiError = ""
@@ -413,6 +421,39 @@ class ChatViewModel(
                         }
                     } catch(e: Exception) {
                         priceApiError += "API harga CoinGecko gagal: ${e.message}\n"
+                    }
+                }
+                
+                val isHolidayQuery = Regex("\\b(tanggal merah|libur|working day|hari libur|suro|muharram|kalender)\\b").containsMatchIn(textLower)
+                if (isHolidayQuery) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Checking Holidays...") }
+                    try {
+                        // Use a simple date parsing or just assume today/tomorrow based on keywords
+                        val cal = java.util.Calendar.getInstance()
+                        cal.timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+                        if (textLower.contains("besok")) {
+                            cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                        } else if (textLower.contains("lusa")) {
+                            cal.add(java.util.Calendar.DAY_OF_YEAR, 2)
+                        } else if (textLower.contains("kemarin")) {
+                            cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+                        }
+                        // try to extract YYYY-MM-DD
+                        val dateRegex = Regex("""(\d{4})-(\d{2})-(\d{2})""")
+                        val match = dateRegex.find(textLower)
+                        val targetDate = if (match != null) {
+                            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd")
+                            sdf.timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+                            sdf.parse(match.value) ?: cal.time
+                        } else {
+                            cal.time
+                        }
+                        val apiNinjasKey = settingsRepository.apiNinjasApiKey.first()
+                        val holidayInfo = holidayRepository.isWorkingDay(targetDate, apiNinjasKey)
+                        searchContext += "Holiday API Result for the requested date:\n$holidayInfo\n\nInstruction: Use the Holiday API result to answer if it is a holiday/tanggal merah and the reason.\n\n"
+                        useSearch = false
+                    } catch (e: Exception) {
+                        searchContext += "Holiday API Check Failed: ${e.message}\n\n"
                     }
                 }
                 

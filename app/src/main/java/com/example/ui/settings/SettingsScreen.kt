@@ -273,6 +273,51 @@ fun SettingsScreen(
                 }
             }
 
+            // API Ninjas API Key
+            Card(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).border(1.dp, OutlineDark, RoundedCornerShape(16.dp)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("API Ninjas", fontSize = 18.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    
+                    OutlinedTextField(
+                        value = uiState.apiNinjasApiKey, onValueChange = { viewModel.updateApiNinjasApiKey(it) }, label = { Text("API Ninjas API Key") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = { IconButton(onClick = { passwordVisible = !passwordVisible }) { Icon(imageVector = if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff, contentDescription = "Toggle password", tint = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                        colors = OutlinedTextFieldDefaults.colors(cursorColor = Color.White, focusedBorderColor = PrimaryNeon, unfocusedBorderColor = OutlineDark, focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Button(
+                        onClick = {
+                            if (uiState.apiNinjasApiKey.isNotBlank()) {
+                                viewModel.saveApiNinjasKey()
+                                android.widget.Toast.makeText(context, "API Ninjas API key saved", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                    ) { Text("Save API Ninjas", color = Color.White) }
+
+                    if (uiState.apiNinjasApiKey.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.removeApiNinjasKey()
+                                android.widget.Toast.makeText(context, "API Ninjas API key removed", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
+                        ) { Text("Remove", color = Color.Red) }
+                    }
+                }
+            }
+
             // 4. Create Photo API
             MediaSettingsCard("4. Create Photo API", 
                 apiKey = uiState.createPhotoApiKey, onApiKeyChange = { viewModel.updateCreatePhotoApiKey(it) },
