@@ -66,6 +66,8 @@ class ChatViewModel(
     private val moshi: Moshi
 ) : ViewModel() {
 
+    private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
+
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
@@ -434,6 +436,38 @@ class ChatViewModel(
                     }
                 }
                 
+                val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
+                val cryptoIds = mutableListOf<String>()
+                if (Regex("\\b(btc|bitcoin)\\b").containsMatchIn(textLower)) cryptoIds.add("bitcoin")
+                if (Regex("\\b(eth|ethereum)\\b").containsMatchIn(textLower)) cryptoIds.add("ethereum")
+                if (Regex("\\b(sol|solana)\\b").containsMatchIn(textLower)) cryptoIds.add("solana")
+                if (Regex("\\b(bnb|binancecoin)\\b").containsMatchIn(textLower)) cryptoIds.add("binancecoin")
+                if (Regex("\\b(xrp|ripple)\\b").containsMatchIn(textLower)) cryptoIds.add("ripple")
+                if (Regex("\\b(doge|dogecoin)\\b").containsMatchIn(textLower)) cryptoIds.add("dogecoin")
+                if (Regex("\\b(usdt|tether)\\b").containsMatchIn(textLower)) cryptoIds.add("tether")
+                
+                var isCryptoQuery = cryptoIds.isNotEmpty()
+                val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
+                var useSearch = shouldUseRealtimeSearch(messageText)
+                
+                if (isCryptoQuery) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Fetching CoinGecko API...") }
+                    try {
+                        val cryptoData = cryptoPriceRepository.getCryptoPrice(cryptoIds)
+                        if (!isNewsOrSentiment && urlsInMessage.isEmpty()) {
+                            // Direct response
+                            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = cryptoData))
+                            _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                            return@launch
+                        } else {
+                            priceApiData += "$cryptoData\n"
+                            priceApiSuccess = true
+                        }
+                    } catch(e: Exception) {
+                        priceApiError += "API harga CoinGecko gagal: ${e.message}\n"
+                    }
+                }
+                
                 if (priceApiData.isNotEmpty() || priceApiError.isNotEmpty()) {
                     searchContext += "Realtime Price API Data:\n"
                     if (priceApiData.isNotEmpty()) searchContext += priceApiData + "\n"
@@ -442,10 +476,9 @@ class ChatViewModel(
                         (if (priceApiError.isNotEmpty()) "Show the exact 'API harga realtime gagal' error message to the user. " else "") + "\n\n"
                 }
 
-                val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
-                var useSearch = shouldUseRealtimeSearch(messageText) && urlsInMessage.isEmpty()
+                useSearch = useSearch && urlsInMessage.isEmpty()
                 
-                if (priceApiSuccess && !Regex("\\b(btc|bitcoin|eth|ethereum|crypto|saham|ihsg|berita|news)\\b").containsMatchIn(textLower)) {
+                if (priceApiSuccess && !isNewsOrSentiment && !Regex("\\b(saham|ihsg)\\b").containsMatchIn(textLower)) {
                     useSearch = false
                 }
                 
