@@ -383,8 +383,71 @@ class ChatViewModel(
                 var searchContext = ""
                 var searchLinks = ""
                 
+                val textLower = messageText.lowercase()
+                val isGoldQuery = Regex("\\b(xau|gold|emas)\\b").containsMatchIn(textLower)
+                val isFiatQuery = Regex("\\b(usd|idr|eur|gbp|jpy|kurs|mata\\s*uang)\\b").containsMatchIn(textLower)
+                
+                var priceApiSuccess = false
+                var priceApiData = ""
+                var priceApiError = ""
+                
+                if (isGoldQuery) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Fetching Metals API...") }
+                    val metalsKey = com.example.BuildConfig.METALS_API_KEY
+                    if (metalsKey.isBlank() || metalsKey == "YOUR_METALS_API_KEY") {
+                        priceApiError += "API harga realtime gagal: METALS_API_KEY not configured.\n"
+                    } else {
+                        try {
+                            val request = okhttp3.Request.Builder()
+                                .url("https://api.metals.dev/v1/latest?api_key=$metalsKey&currency=USD&unit=toz")
+                                .build()
+                            val response = okHttpClient.newCall(request).execute()
+                            val body = response.body?.string()
+                            if (response.isSuccessful && body != null) {
+                                priceApiData += "Metals.dev (Base USD, Troy Ounce): $body\n"
+                                priceApiSuccess = true
+                            } else {
+                                priceApiError += "API harga realtime gagal: Metals API ${response.code}\n"
+                            }
+                        } catch(e: Exception) {
+                            priceApiError += "API harga realtime gagal: Metals API ${e.message}\n"
+                        }
+                    }
+                }
+                
+                if (isFiatQuery) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Fetching Currency API...") }
+                    try {
+                        val request = okhttp3.Request.Builder()
+                            .url("https://api.frankfurter.app/latest?from=USD")
+                            .build()
+                        val response = okHttpClient.newCall(request).execute()
+                        val body = response.body?.string()
+                        if (response.isSuccessful && body != null) {
+                            priceApiData += "Frankfurter (Base USD): $body\n"
+                            priceApiSuccess = true
+                        } else {
+                            priceApiError += "API harga realtime gagal: Frankfurter API ${response.code}\n"
+                        }
+                    } catch(e: Exception) {
+                        priceApiError += "API harga realtime gagal: Frankfurter API ${e.message}\n"
+                    }
+                }
+                
+                if (priceApiData.isNotEmpty() || priceApiError.isNotEmpty()) {
+                    searchContext += "Realtime Price API Data:\n"
+                    if (priceApiData.isNotEmpty()) searchContext += priceApiData + "\n"
+                    if (priceApiError.isNotEmpty()) searchContext += priceApiError + "\n"
+                    searchContext += "Instruction: Use the Realtime Price API Data above. DO NOT guess or use search for these prices. " +
+                        (if (priceApiError.isNotEmpty()) "Show the exact 'API harga realtime gagal' error message to the user. " else "") + "\n\n"
+                }
+
                 val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
-                val useSearch = shouldUseRealtimeSearch(messageText) && urlsInMessage.isEmpty()
+                var useSearch = shouldUseRealtimeSearch(messageText) && urlsInMessage.isEmpty()
+                
+                if (priceApiSuccess && !Regex("\\b(btc|bitcoin|eth|ethereum|crypto|saham|ihsg|berita|news)\\b").containsMatchIn(textLower)) {
+                    useSearch = false
+                }
                 
                 if (urlsInMessage.isNotEmpty()) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking website...") }
