@@ -142,16 +142,16 @@ class ChatViewModel(
 
     private fun shouldUseRealtimeSearch(messageText: String): Boolean {
         val keywords = listOf(
-            "cari", "search", "carikan", "cek", "berita terbaru", "terbaru", 
-            "update terbaru", "hari ini", "sekarang", "live", "real time", 
-            "realtime", "viral", "trending", "sedang viral", "sosial media", 
-            "twitter", "x", "tiktok", "instagram", "youtube", "harga", "price", 
-            "kurs", "btc", "bitcoin", "eth", "ethereum", "crypto", "saham", 
-            "ihsg", "usd", "idr"
+            "carikan website", "cari website", "carikan link", "cari link", 
+            "gunakan browser", "gunakan browser anda", "browsing", 
+            "cari di internet", "cari di web", "search web", "search internet", 
+            "cek website", "cek web", "sumber", "link resmi", "rekomendasi website", 
+            "website untuk", "dimana daftar", "cari api", "cari proxy", 
+            "cari model", "cari provider", "website", "web", "browser", "internet", "link"
         )
         val textLower = messageText.lowercase()
         return keywords.any { keyword -> 
-            Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(textLower)
+            Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(textLower) || textLower.contains(keyword)
         }
     }
 
@@ -507,7 +507,7 @@ class ChatViewModel(
                     _uiState.update { it.copy(loadingText = null) }
                 } else if (useSearch) {
                     if (firecrawlKey.isBlank() || firecrawlKey == "\"YOUR_FIRECRAWL_API_KEY\"" || firecrawlKey == "YOUR_FIRECRAWL_API_KEY") {
-                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Please add your Firecrawl API key in Settings first. Answering without live search."))
+                        searchContext = "Search/browser belum bisa digunakan karena Firecrawl API key belum dikonfigurasi. Saya tidak akan mengarang hasil website. Katakan dengan jujur bahwa search belum dikonfigurasi."
                     } else {
                         try {
                             val searchAdapter = moshi.adapter(com.example.network.FirecrawlSearchRequest::class.java)
@@ -535,14 +535,16 @@ class ChatViewModel(
                                             topResults.joinToString("\n\n") { "- Title: ${it.title}\n  Description: ${it.description}\n  URL: ${it.url}" }
                                             
                                     searchLinks = "\n\nSources:\n" + topResults.joinToString("\n") { "• ${it.title ?: "Link"}\n  ${it.url}" }
+                                } else {
+                                    searchContext = "Search/browser berjalan tetapi tidak ada hasil yang relevan. Jangan mengarang hasil."
                                 }
                             } else {
                                 val errCode = fResponse.code
                                 val errMsg = fResponseStr ?: "Unknown error"
-                                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search failed (HTTP $errCode): $errMsg"))
+                                searchContext = "Search/browser gagal digunakan (HTTP $errCode - $errMsg). Katakan dengan jujur bahwa search gagal."
                             }
                         } catch (e: Exception) {
-                            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Real-time search failed: ${e.message}"))
+                            searchContext = "Search/browser gagal digunakan (${e.message}). Katakan dengan jujur bahwa search gagal."
                         }
                     }
                 }
@@ -565,6 +567,23 @@ class ChatViewModel(
                 }
                 
                 systemPrompt += "\n\n" + AppGuide.TEXT
+                
+                val antiHallucination = """
+                    
+                    ATURAN PENTING (ANTI-HALUSINASI TOOL):
+                    Kamu tidak boleh mengklaim telah:
+                    - menjalankan date
+                    - membuka browser
+                    - browsing
+                    - mengecek website
+                    - mengecek API
+                    - membaca halaman
+                    - mencari di internet
+                    Kecuali aplikasi benar-benar mengirimkan hasil dari tool/API tersebut ke prompt ini.
+                    Jika tool/API tidak jalan, kamu harus bilang jujur: "Data realtime belum tersedia." atau "Search gagal, jadi saya tidak bisa memastikan."
+                    Jawaban default harus ringkas, jelas, dan langsung. Jangan terlalu panjang kecuali user meminta detail.
+                """.trimIndent()
+                systemPrompt += "\n\n$antiHallucination"
                 
                 if (memoryEnabled) {
                     val allMemories = memoryRepository.getAllMemories()
