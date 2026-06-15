@@ -73,13 +73,12 @@ class MicrosoftAuthService(private val context: Context) {
             val tenantId = localStorage.getMicrosoftTenant()
 
             val signatureHash = getSignatureHash()
-            val encodedHash = java.net.URLEncoder.encode(signatureHash, "UTF-8")
             
             val msalConfigJson = """
             {
               "client_id" : "$clientId",
               "authorization_user_agent" : "DEFAULT",
-              "redirect_uri" : "msauth://com.aistudio.aichatmobile.xmqpr/$encodedHash",
+              "redirect_uri" : "msauth://com.aistudio.aichatmobile.xmqpr/$signatureHash",
               "account_mode" : "SINGLE",
               "broker_redirect_uri_registered": true,
               "authorities" : [
