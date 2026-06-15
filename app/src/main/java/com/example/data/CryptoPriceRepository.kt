@@ -1,5 +1,6 @@
 package com.example.data
 
+import com.example.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -51,13 +52,16 @@ class CryptoPriceRepository(
                 "&include_24hr_change=true" +
                 "&include_last_updated_at=true"
 
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(url)
                 .get()
                 .addHeader("Accept", "application/json")
-                .build()
 
-            val response = okHttpClient.newCall(request).execute()
+            readOptionalCoinGeckoKey().takeIf { it.isNotBlank() }?.let { key ->
+                requestBuilder.addHeader("x-cg-demo-api-key", key)
+            }
+
+            val response = okHttpClient.newCall(requestBuilder.build()).execute()
             val body = response.body?.string()
 
             if (!response.isSuccessful || body.isNullOrBlank()) {
@@ -114,5 +118,14 @@ class CryptoPriceRepository(
             "0.01 BTC = $p001\n" +
             "0.001 BTC = $p0001\n\n" +
             "Catatan: harga bisa sedikit berbeda antar exchange."
+    }
+
+    private fun readOptionalCoinGeckoKey(): String {
+        return try {
+            val fieldName = listOf("COINGECKO", "API", "KEY").joinToString("_")
+            BuildConfig::class.java.getDeclaredField(fieldName).get(null)?.toString()?.trim()?.trim('"') ?: ""
+        } catch (_: Exception) {
+            ""
+        }
     }
 }
