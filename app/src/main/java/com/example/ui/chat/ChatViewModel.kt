@@ -307,13 +307,6 @@ class ChatViewModel(
                 val isGoldQuery = Regex("\\b(xau|gold|emas)\\b").containsMatchIn(textLower)
                 val isFiatQuery = Regex("\\b(usd|idr|eur|gbp|jpy|kurs|mata\\s*uang)\\b").containsMatchIn(textLower)
                 
-                val sdf = java.text.SimpleDateFormat("EEEE, dd MMMM yyyy HH:mm z", java.util.Locale("id", "ID"))
-                sdf.timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
-                val currentDateStr = sdf.format(java.util.Date())
-                val tz = "Asia/Jakarta"
-                val country = "ID"
-                searchContext += "Tanggal dan waktu sekarang: $currentDateStr.\nTimezone: $tz.\nCountry code: $country.\nHoliday check: gunakan API Ninjas jika user bertanya tentang tanggal merah, libur, hari kerja, public holiday, Suro, Muharram, atau kalender.\n\n"
-                
                 var priceApiSuccess = false
                 var priceApiData = ""
                 var priceApiError = ""
@@ -599,6 +592,11 @@ class ChatViewModel(
                     systemPrompt += "\n\n$searchContext"
                 }
 
+                val timeContext = getCurrentTimeContext()
+                systemPrompt += "\n\n" + timeContext
+                android.util.Log.d("ChatViewModel", "CurrentTimeContext injected: true")
+                android.util.Log.d("ChatViewModel", "CurrentTimeContext contains hour: true")
+
                 val chatMessages = mutableListOf<com.example.network.ChatRequestMessage>()
                 chatMessages.add(com.example.network.ChatRequestMessage(role = "system", content = listOf(com.example.network.VisionContent(type = "text", text = systemPrompt))))
                 
@@ -672,7 +670,8 @@ class ChatViewModel(
                 }
 
                 // Manually append the latest user message
-                chatMessages.add(makeMessage("user", messageText, imageUri, true))
+                val finalUserMessage = "$timeContext\n\nPERTANYAAN USER:\n$messageText"
+                chatMessages.add(makeMessage("user", finalUserMessage, imageUri, true))
 
                 if (attachmentSendFailedMsg != null) {
                     _uiState.update {
@@ -812,4 +811,42 @@ class ChatViewModel(
             throw IllegalArgumentException("Unknown ViewModel class")
         }
     }
+}
+
+fun getCurrentTimeContext(): String {
+    val zoneId = try {
+        java.time.ZoneId.systemDefault()
+    } catch (e: Exception) {
+        java.time.ZoneId.of("Asia/Jakarta")
+    }
+
+    val now = java.time.ZonedDateTime.now(zoneId)
+
+    val dateFormatter = java.time.format.DateTimeFormatter.ofPattern(
+        "EEEE, dd MMMM yyyy",
+        java.util.Locale.forLanguageTag("id-ID")
+    )
+    val timeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+    
+    val dateStr = now.format(dateFormatter)
+    val timeStr = now.format(timeFormatter)
+    val isPastMaghrib = now.hour >= 18
+
+    return """
+CURRENT_REAL_TIME_CONTEXT:
+Tanggal sekarang: $dateStr
+Jam sekarang: $timeStr
+Timezone: ${zoneId.id}
+Country code: ID
+Sudah lewat Maghrib fallback: $isPastMaghrib
+
+Aturan Suro/Muharram:
+1. Kalender Hijriah/Jawa berganti setelah Maghrib, bukan jam 00:00.
+2. Jika besok adalah 1 Muharram / 1 Suro dan jam sekarang >= 18:00 (Sudah lewat Maghrib), jawab:
+   "Ya, sekarang sudah masuk malam 1 Suro / malam 1 Muharram."
+3. Bedakan:
+   - malam 1 Suro = mulai setelah Maghrib tanggal sebelumnya
+   - tanggal merah resmi = tanggal Masehi besoknya
+4. Jangan jawab "belum Suro" hanya karena tanggal Masehi masih tanggal sebelumnya.
+""".trimIndent()
 }
