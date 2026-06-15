@@ -7,6 +7,7 @@ import com.example.data.AppGuide
 import com.example.data.ChatRepository
 import com.example.data.ChatSessionEntity
 import com.example.data.CryptoPriceRepository
+import com.example.data.FiatRateRepository
 import com.example.data.MessageEntity
 import com.example.data.SettingsRepository
 import com.example.network.ChatRequest
@@ -70,6 +71,7 @@ class ChatViewModel(
 
     private var messageJob: kotlinx.coroutines.Job? = null
     private val cryptoPriceRepository = CryptoPriceRepository(okHttpClient)
+    private val fiatRateRepository = FiatRateRepository(okHttpClient)
 
     init {
         viewModelScope.launch {
@@ -368,6 +370,24 @@ class ChatViewModel(
                     } else {
                         android.util.Log.w("ChatViewModel", "CoinGecko price check failed: ${cryptoResult.exceptionOrNull()?.message}")
                         _uiState.update { it.copy(loadingText = null) }
+                    }
+                }
+
+                if (imageUri == null) {
+                    val fiatQuery = fiatRateRepository.parseFiatRateQuery(messageText)
+                    if (fiatQuery != null) {
+                        _uiState.update { it.copy(loadingText = "Checking currency rate...") }
+                        val fiatResult = fiatRateRepository.getLatestRate(fiatQuery)
+                        val rate = fiatResult.getOrNull()
+                        if (rate != null) {
+                            val answer = fiatRateRepository.formatFiatRateAnswer(rate)
+                            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = answer))
+                            _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                            return@launch
+                        } else {
+                            android.util.Log.w("ChatViewModel", "Frankfurter rate check failed: ${fiatResult.exceptionOrNull()?.message}")
+                            _uiState.update { it.copy(loadingText = null) }
+                        }
                     }
                 }
 
