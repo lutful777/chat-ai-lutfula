@@ -46,7 +46,9 @@ export default async function handler(req, res) {
   if (!baseUrl) return sendJson(res, 500, { error: "AI_BASE_URL belum disetel di Vercel Environment Variables." });
 
   const body = parseBody(req);
-  const upstreamBody = { ...body, model: String(body.model || defaultModel).trim(), stream: false };
+  const requestedModel = String(body.model || "").trim();
+  const resolvedModel = requestedModel === "" || requestedModel === "server-default" ? defaultModel : requestedModel;
+  const upstreamBody = { ...body, model: resolvedModel, stream: false };
   if (!upstreamBody.model) return sendJson(res, 500, { error: "AI_MODEL belum disetel atau request model kosong." });
 
   try {
