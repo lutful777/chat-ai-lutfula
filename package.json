@@ -1,0 +1,12 @@
+{
+  "name": "chat-ai-lutfula-vercel-api",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "echo \"Vercel API only - no frontend build needed\"",
+    "start": "node -e \"console.log('Vercel API project')\""
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
