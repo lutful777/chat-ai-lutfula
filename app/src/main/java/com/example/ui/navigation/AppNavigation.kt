@@ -31,7 +31,7 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
     object Chat : Screen("chat", "Chat", Icons.AutoMirrored.Filled.Chat)
     object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
     object Studio : Screen("studio", "AI Studio", Icons.Filled.Movie)
-    object Trading : Screen("trading", "Trading", Icons.Filled.Settings) // reused icon
+    object Trading : Screen("trading", "Crypto Info", Icons.Filled.Settings) // reused icon
 }
 
 @Composable
@@ -109,13 +109,13 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.Trading.route) {
-                val tradingViewModel: com.example.ui.trading.TradingViewModel = viewModel(
-                    factory = com.example.ui.trading.TradingViewModel.Factory(
+                val marketInfoViewModel: com.example.ui.market.MarketInfoViewModel = viewModel(
+                    factory = com.example.ui.market.MarketInfoViewModel.Factory(
                         AppContainer.okHttpClient
                     )
                 )
-                com.example.ui.trading.TradingScreen(
-                    viewModel = tradingViewModel,
+                com.example.ui.market.MarketInfoScreen(
+                    viewModel = marketInfoViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
