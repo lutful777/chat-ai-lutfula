@@ -3,6 +3,15 @@ package com.example.network
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
+fun sanitizeModelOutput(text: String): String {
+    return text
+        .replace(Regex("(?is)<think>.*?</think>"), "")
+        .replace(Regex("(?is)<thinking>.*?</thinking>"), "")
+        .replace(Regex("(?is)<reasoning>.*?</reasoning>"), "")
+        .replace(Regex("(?is)<analysis>.*?</analysis>"), "")
+        .trim()
+}
+
 @JsonClass(generateAdapter = true)
 data class AiModelConfig(
     val modelName: String,
@@ -47,8 +56,11 @@ data class ChatRequest(
 @JsonClass(generateAdapter = true)
 data class ChatMessage(
     val role: String,
+    @param:Json(name = "content") val rawContent: String
+) {
     val content: String
-)
+        get() = sanitizeModelOutput(rawContent)
+}
 
 @JsonClass(generateAdapter = true)
 data class ChatResponse(
