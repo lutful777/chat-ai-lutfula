@@ -268,7 +268,8 @@ class ChatViewModel(
                     return@launch
                 }
 
-                val currencyQuery = com.example.data.CurrencyDetector.detect(messageText)
+                val earlyCryptoQuery = com.example.data.CryptoDetector.detect(messageText)
+                val currencyQuery = if (earlyCryptoQuery == null) com.example.data.CurrencyDetector.detect(messageText) else null
                 if (currencyQuery != null) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Fetching Currency API...") }
                     val currencyResult = try {
@@ -367,7 +368,7 @@ class ChatViewModel(
                 }
 
                 val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
-                val cryptoQuery = com.example.data.CryptoDetector.detect(messageText)
+                val cryptoQuery = earlyCryptoQuery
                 val isCryptoQuery = cryptoQuery != null
                 val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
                 var useSearch = shouldUseRealtimeSearch(messageText)
