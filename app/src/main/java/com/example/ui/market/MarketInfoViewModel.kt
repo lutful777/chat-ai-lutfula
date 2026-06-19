@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.Locale
 
 data class MarketInfoUiState(
@@ -26,8 +27,6 @@ class MarketInfoViewModel(
 
     private val _uiState = MutableStateFlow(MarketInfoUiState())
     val uiState: StateFlow<MarketInfoUiState> = _uiState
-
-    private val backendUrl = "https://chat-ai-lutfula.vercel.app"
 
     fun fetchMarketPrices() {
         _uiState.update { it.copy(isLoading = true, error = null) }
@@ -57,8 +56,10 @@ class MarketInfoViewModel(
         _uiState.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val query = URLEncoder.encode("bitcoin OR btc cryptocurrency", "UTF-8")
+                val newsUrl = "https://api.gdeltproject.org/api/v2/doc/doc?query=$query&mode=artlist&format=json&maxrecords=10&sort=hybridrel"
                 val request = Request.Builder()
-                    .url("$backendUrl/api/search?q=btc%20bitcoin%20news")
+                    .url(newsUrl)
                     .header("User-Agent", "AiChatMobile/1.0")
                     .build()
                 val response = okHttpClient.newCall(request).execute()
@@ -69,7 +70,7 @@ class MarketInfoViewModel(
                     return@launch
                 }
 
-                val formatted = formatNews(body)
+                val formatted = formatRealtimeBtcNews(body)
                 _uiState.update { it.copy(newsData = formatted, isLoading = false, error = null) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = formatNetworkError(e)) }
@@ -96,27 +97,90 @@ class MarketInfoViewModel(
         } + "\n\nInfo harga hanya read-only."
     }
 
-    private fun formatNews(body: String): String {
+    private fun formatRealtimeBtcNews(body: String): String {
         return try {
             val json = JSONObject(body)
-            val data = json.optJSONArray("data") ?: json.optJSONArray("results")
-            if (data == null || data.length() == 0) return "Tidak ada news BTC terbaru saat ini."
-            val items = mutableListOf<String>()
-            val maxItems = minOf(5, data.length())
+            val articles = json.optJSONArray("articles")
+            if (articles == null || articles.length() == 0) {
+                return "News BTC realtime belum tersedia dari sumber saat ini. Coba refresh beberapa menit lagi."
+            }
+
+            val articleTexts = mutableListOf<String>()
+            val allTitles = mutableListOf<String>()
+            val maxItems = minOf(6, articles.length())
+
             for (i in 0 until maxItems) {
-                val item = data.optJSONObject(i) ?: continue
-                val title = item.optString("title", "No title")
-                val description = item.optString("description", "")
-                val url = item.optString("url", "")
-                items.add(buildString {
+                val item = articles.optJSONObject(i) ?: continue
+                val title = item.optString("title", "No title").trim()
+                val url = item.optString("url", "").trim()
+                val domain = item.optString("domain", "").trim()
+                val seenDate = item.optString("seendate", "").trim()
+
+                if (title.isBlank()) continue
+                allTitles.add(title)
+                articleTexts.add(buildString {
                     append("${i + 1}. $title")
-                    if (description.isNotBlank()) append("\n$description")
+                    if (domain.isNotBlank()) append("\nSumber: $domain")
+                    if (seenDate.isNotBlank()) append(" | Waktu: $seenDate")
                     if (url.isNotBlank()) append("\n$url")
                 })
             }
-            items.joinToString("\n\n") + "\n\nNews hanya informasi."
+
+            val joinedTitles = allTitles.joinToString(". ")
+            val sentiment = analyzeBtcNewsSentiment(joinedTitles)
+
+            buildString {
+                append("BTC News Realtime\n")
+                append("Sentimen berita: ${sentiment.label}\n")
+                append("Alasan utama: ${sentiment.reason}\n\n")
+                append("Berita yang paling berpengaruh:\n")
+                append(articleTexts.joinToString("\n\n"))
+                append("\n\nRingkasan dampak:\n")
+                append(sentiment.impact)
+                append("\n\nCatatan: analisis ini hanya informasi berita, bukan saran finansial atau instruksi transaksi.")
+            }
         } catch (e: Exception) {
             if (body.isBlank()) "News response kosong." else body.take(4000)
+        }
+    }
+
+    private data class NewsSentiment(
+        val label: String,
+        val reason: String,
+        val impact: String
+    )
+
+    private fun analyzeBtcNewsSentiment(text: String): NewsSentiment {
+        val lower = text.lowercase(Locale.US)
+        val negativeKeywords = listOf(
+            "hack", "hacked", "exploit", "lawsuit", "ban", "crackdown", "probe", "investigation",
+            "outflow", "selloff", "sell-off", "liquidation", "dump", "falls", "drops", "slumps",
+            "rate hike", "hawkish", "inflation", "recession", "risk-off"
+        )
+        val positiveKeywords = listOf(
+            "etf inflow", "inflow", "approval", "approves", "adoption", "institutional", "accumulation",
+            "buys", "purchase", "rallies", "surges", "jumps", "record high", "breakout", "easing", "rate cut"
+        )
+
+        val negativeScore = negativeKeywords.count { lower.contains(it) }
+        val positiveScore = positiveKeywords.count { lower.contains(it) }
+
+        return when {
+            negativeScore > positiveScore -> NewsSentiment(
+                label = "Bearish / hati-hati",
+                reason = "headline lebih banyak memuat risiko seperti tekanan jual, regulasi, makro ketat, atau sentimen risk-off.",
+                impact = "BTC bisa tetap tertekan dalam jangka pendek sampai muncul katalis positif atau tekanan jual mereda."
+            )
+            positiveScore > negativeScore -> NewsSentiment(
+                label = "Bullish ringan",
+                reason = "headline lebih banyak memuat dukungan seperti inflow, adopsi, pembelian institusi, atau reli harga.",
+                impact = "BTC berpeluang mendapat dukungan sentimen, tetapi tetap perlu dikonfirmasi oleh volume dan pergerakan harga."
+            )
+            else -> NewsSentiment(
+                label = "Netral / wait and see",
+                reason = "headline belum menunjukkan dominasi sentimen positif atau negatif yang kuat.",
+                impact = "BTC cenderung menunggu katalis baru seperti data makro, arus ETF, regulasi, atau pergerakan institusi."
+            )
         }
     }
 
