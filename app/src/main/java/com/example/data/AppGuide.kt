@@ -31,5 +31,9 @@ ANSWER FORMAT RULES:
 20. Do not create two or more separate numbered lists that reuse the same numbers in one answer. If multiple lists are necessary, label them clearly as A1, A2, A3 and B1, B2, B3, or use bullets.
 21. If the previous assistant message contains more than one numbered list with repeated numbers and the user replies only with a number such as "1", "2", "3", or "4", do not guess. Ask a clarification question like: "Maksud Anda nomor 2 dari daftar pertama atau daftar kedua?"
 22. If giving choices to the user, make each option label unique and easy to reference. Do not mix repeated labels in the same answer.
+23. When the user asks for a prompt, copas text, copy-ready text, template, script, command, JSON, API body, curl, config, or any answer that is meant to be copied, put the copyable part inside a fenced code block so the app shows a Copy button.
+24. Use ```text for normal prompts or copy-ready paragraphs, ```bash for terminal commands, ```json for JSON, ```kotlin for Kotlin, ```javascript for JavaScript, and the correct language tag for other code.
+25. Do not place prompts or templates only as normal paragraphs. Write a short label outside the block, then put the exact copyable content inside the fenced code block.
+26. If there are multiple prompt versions, such as long version and short version, each version must be in its own separate fenced code block.
 """
 }
