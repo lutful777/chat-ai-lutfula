@@ -1,0 +1,111 @@
+name: Patch Chat Copy UI
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch-chat-copy-ui:
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, 'Apply chat copy UI patch')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove global assistant copy button
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/example/ui/chat/ChatScreen.kt')
+          text = path.read_text()
+          original = text
+
+          old_global_copy = '''            if (!isUser) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    val clipboardManager = LocalClipboardManager.current
+                    var buttonText by remember { mutableStateOf("Copy") }
+                    val scope = rememberCoroutineScope()
+                    
+                    Text(
+                        text = buttonText,
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable {
+                                clipboardManager.setText(AnnotatedString(message.content))
+                                buttonText = "Copied"
+                                scope.launch {
+                                    kotlinx.coroutines.delay(2000)
+                                    buttonText = "Copy"
+                                }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+'''
+
+          new_global_copy = '''            // Copy button for the whole assistant message was removed.
+            // Copy buttons remain only inside prompt/script/code blocks.
+'''
+
+          if old_global_copy in text:
+              text = text.replace(old_global_copy, new_global_copy, 1)
+
+          old_code_text = '''                            Text(
+                                text = trimmedContent,
+                                color = Color.LightGray,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                modifier = Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                            )
+'''
+
+          new_code_text = '''                            val isReadableTextBlock =
+                                languageId.equals("text", ignoreCase = true) ||
+                                languageId.equals("prompt", ignoreCase = true)
+
+                            Text(
+                                text = trimmedContent,
+                                color = Color.LightGray,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = if (isReadableTextBlock) FontFamily.Default else FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                modifier = if (isReadableTextBlock) {
+                                    Modifier.fillMaxWidth()
+                                } else {
+                                    Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                                }
+                            )
+'''
+
+          if old_code_text in text:
+              text = text.replace(old_code_text, new_code_text, 1)
+
+          if text == original:
+              print('No UI patch needed or patterns not found.')
+          else:
+              path.write_text(text)
+              print('Chat copy UI patch applied.')
+          PY
+
+      - name: Commit patch if changed
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/ui/chat/ChatScreen.kt
+          git commit -m "Apply chat copy UI patch"
+          git push
