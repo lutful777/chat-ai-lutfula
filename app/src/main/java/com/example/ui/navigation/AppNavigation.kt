@@ -62,6 +62,19 @@ fun AppNavigation() {
         )
     )
 
+    LaunchedEffect(Unit) {
+        val prefs = context.applicationContext.getSharedPreferences("notification_open", android.content.Context.MODE_PRIVATE)
+        val sessionId = prefs.getLong("pending_session_id", -1L)
+        if (sessionId > 0L) {
+            prefs.edit().remove("pending_session_id").apply()
+            chatViewModel.selectSession(sessionId)
+            navController.navigate(Screen.Chat.route) {
+                popUpTo(Screen.Welcome.route) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
     Scaffold { innerPadding ->
         NavHost(
             navController = navController,
