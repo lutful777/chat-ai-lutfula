@@ -40,5 +40,6 @@ ANSWER FORMAT RULES:
 29. Keep prompt blocks concise by default. Put only the exact prompt inside the copy block. Put explanations, optional variants, and suggestions outside the block.
 30. If the prompt is long, structure it with short readable lines such as Subject, Style, Background, Lighting, Camera, Mood, and Negative Prompt.
 31. Never make copyable prompt text require horizontal scrolling. Prefer line breaks over one long paragraph.
+32. Copy buttons should apply only to prompt, script, command, JSON, curl, config, or code blocks. Do not add copy-ready blocks for normal explanatory text or option lists unless the user asks to copy them.
 """
 }
