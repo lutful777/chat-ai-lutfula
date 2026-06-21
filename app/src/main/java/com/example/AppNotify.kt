@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
 object AppNotify {
+    const val EXTRA_OPEN_SESSION_ID = "open_session_id"
     private const val CHANNEL_ID = "ai_chat_status"
     private const val CHANNEL_NAME = "Ai Chat"
     private const val ANSWER_ID = 4101
@@ -22,21 +23,22 @@ object AppNotify {
         }
     }
 
-    fun showAnswerReadyIfBackground(context: Context) {
+    fun showAnswerReadyIfBackground(context: Context, sessionId: Long) {
         if (AppVisibility.isAppInForeground) return
-        show(context, ANSWER_ID, "Ai Chat", "Answer is ready")
+        show(context, ANSWER_ID, "Ai Chat", "Answer is ready", sessionId)
     }
 
     fun showReminder(context: Context) {
         val id = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
-        show(context, id, "Ai Chat Reminder", "It's time for your reminder.")
+        show(context, id, "Ai Chat Reminder", "It's time for your reminder.", null)
     }
 
     @SuppressLint("MissingPermission")
-    private fun show(context: Context, id: Int, title: String, message: String) {
+    private fun show(context: Context, id: Int, title: String, message: String, sessionId: Long?) {
         createChannels(context)
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (sessionId != null) putExtra(EXTRA_OPEN_SESSION_ID, sessionId)
         }
         val pendingIntent = PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val item = NotificationCompat.Builder(context, CHANNEL_ID)
