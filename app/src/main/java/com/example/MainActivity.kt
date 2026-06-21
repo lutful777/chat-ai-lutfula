@@ -2,6 +2,7 @@ package com.example
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -25,6 +26,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    saveNotificationOpenSession(intent)
     AppNotify.createChannels(this)
     requestNotificationPermissionIfNeeded()
     startMessageObserver()
@@ -36,6 +38,12 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    saveNotificationOpenSession(intent)
+  }
+
   override fun onStart() {
     super.onStart()
     AppVisibility.isAppInForeground = true
@@ -44,6 +52,17 @@ class MainActivity : ComponentActivity() {
   override fun onStop() {
     AppVisibility.isAppInForeground = false
     super.onStop()
+  }
+
+  private fun saveNotificationOpenSession(sourceIntent: Intent?) {
+    val sessionId = sourceIntent?.getLongExtra(AppNotify.EXTRA_OPEN_SESSION_ID, -1L) ?: -1L
+    if (sessionId > 0L) {
+      applicationContext
+        .getSharedPreferences("notification_open", Context.MODE_PRIVATE)
+        .edit()
+        .putLong("pending_session_id", sessionId)
+        .apply()
+    }
   }
 
   private fun requestNotificationPermissionIfNeeded() {
@@ -71,7 +90,7 @@ class MainActivity : ComponentActivity() {
         prefs.edit().putInt("last_message_id", message.id).apply()
 
         if (message.role == "assistant") {
-          AppNotify.showAnswerReadyIfBackground(appContext)
+          AppNotify.showAnswerReadyIfBackground(appContext, message.sessionId)
         } else if (message.role == "user") {
           ReminderScheduler.scheduleFromTextIfPossible(appContext, message.content)
         }
