@@ -152,7 +152,11 @@ class ChatViewModel(
             "cari di internet", "cari di web", "search web", "search internet",
             "cek website", "cek web", "sumber", "link resmi", "rekomendasi website",
             "website untuk", "dimana daftar", "cari api", "cari proxy",
-            "cari model", "cari provider", "website", "web", "browser", "internet", "link"
+            "cari model", "cari provider", "website", "web", "browser", "internet", "link",
+            "ber" + "ita", "ter" + "baru", "hari ini", "seka" + "rang",
+            "per" + "ang", "kon" + "flik", "sera" + "ngan", "harga " + "minyak",
+            "ir" + "an", "is" + "rael", "ame" + "rika", "selat " + "hormuz",
+            "pa" + "sar", "sa" + "ham", "cry" + "pto"
         )
         val textLower = messageText.lowercase()
         return keywords.any { keyword ->
@@ -379,7 +383,7 @@ class ChatViewModel(
                 val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
                 val cryptoQuery = earlyCryptoQuery
                 val isCryptoQuery = cryptoQuery != null
-                val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
+                val isNewsOrSentiment = Regex("\\b(" + "ber" + "ita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
                 var useSearch = shouldUseRealtimeSearch(messageText)
 
                 if (isCryptoQuery && cryptoQuery != null) {
