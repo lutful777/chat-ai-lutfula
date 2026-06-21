@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.example.data.AppDatabase
 import com.example.data.ChatRepository
 import com.example.data.SettingsRepository
+import com.example.network.MetalsBackendInterceptor
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
@@ -65,6 +66,7 @@ object AppContainer {
 
     val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .addInterceptor(MetalsBackendInterceptor())
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
