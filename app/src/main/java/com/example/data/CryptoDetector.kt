@@ -27,15 +27,23 @@ object CryptoDetector {
         "tether" to "tether"
     )
 
-    private val intentWords = listOf(
-        "harga", "price", "berapa", "realtime", "market cap", "volume", "kurs", "rate",
-        "usd", "idr", "rupiah", "dollar", "dolar", "coin", "crypto", "kripto", "token"
+    private val cryptoIntentWords = listOf(
+        "crypto", "kripto", "coin", "token", "altcoin", "blockchain", "wallet",
+        "market cap crypto", "volume crypto", "airdrop", "defi", "nft"
+    )
+
+    private val webOrTravelWords = listOf(
+        "http://", "https://", ".com", ".id", ".net", ".org", ".dev", ".app", ".co",
+        "website", "web", "link", "browser", "internet", "tiket", "pesawat", "hotel",
+        "booking", "travel", "refund", "reschedule", "promo", "voucher", "checkout",
+        "produk", "barang", "belanja", "marketplace", "shopee", "tokopedia", "lazada",
+        "tiket.com", "traveloka", "agoda", "booking.com"
     )
 
     private val stopWords = setOf(
         "harga", "price", "berapa", "realtime", "market", "cap", "volume", "kurs", "rate",
         "usd", "idr", "rupiah", "dollar", "dolar", "coin", "crypto", "kripto", "token",
-        "ke", "to", "in", "dalam", "sekarang", "hari", "ini", "cek", "tolong", "dong", "ya",
+        "ke", "to", "in", "dalam", "sekarang", "hari", "ini", "cek", "chek", "tolong", "dong", "ya",
         "naik", "turun", "berita", "news", "sentimen", "kenapa", "analisa", "analisis"
     )
 
@@ -43,14 +51,16 @@ object CryptoDetector {
         val text = message.trim().lowercase(Locale.US)
         if (text.isBlank()) return null
 
+        if (looksLikeWebOrTravel(text)) return null
+
         directAliases.forEach { (alias, coinId) ->
             if (Regex("(?<![a-z0-9])${Regex.escape(alias)}(?![a-z0-9])").containsMatchIn(text)) {
                 return CryptoQuery(query = coinId, originalText = message)
             }
         }
 
-        val hasIntent = intentWords.any { text.contains(it) }
-        if (!hasIntent) return null
+        val hasCryptoIntent = cryptoIntentWords.any { text.contains(it) }
+        if (!hasCryptoIntent) return null
 
         val cleaned = text
             .replace(Regex("https?://\\S+"), " ")
@@ -62,5 +72,10 @@ object CryptoDetector {
         if (query.isBlank()) return null
 
         return CryptoQuery(query = query, originalText = message)
+    }
+
+    private fun looksLikeWebOrTravel(text: String): Boolean {
+        if (webOrTravelWords.any { text.contains(it) }) return true
+        return Regex("(?<![a-z0-9])([a-z0-9-]+\\.)+[a-z]{2,}(?![a-z0-9])").containsMatchIn(text)
     }
 }
