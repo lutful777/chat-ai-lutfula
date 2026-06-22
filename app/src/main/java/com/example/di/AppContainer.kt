@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.data.AppDatabase
 import com.example.data.ChatRepository
+import com.example.data.CloudMemoryClient
 import com.example.data.SettingsRepository
 import com.example.network.MetalsBackendInterceptor
 import com.squareup.moshi.Moshi
@@ -16,6 +17,7 @@ object AppContainer {
     private var _database: AppDatabase? = null
     private var _chatRepository: ChatRepository? = null
     private var _memoryRepository: com.example.data.MemoryRepository? = null
+    private var _cloudMemoryClient: CloudMemoryClient? = null
     private var _localStorage: com.example.data.LocalStorage? = null
 
     fun getLocalStorage(context: Context): com.example.data.LocalStorage {
@@ -51,9 +53,19 @@ object AppContainer {
         return _chatRepository!!
     }
 
+    private fun getCloudMemoryClient(): CloudMemoryClient {
+        if (_cloudMemoryClient == null) {
+            _cloudMemoryClient = CloudMemoryClient(okHttpClient)
+        }
+        return _cloudMemoryClient!!
+    }
+
     fun getMemoryRepository(context: Context): com.example.data.MemoryRepository {
         if (_memoryRepository == null) {
-            _memoryRepository = com.example.data.MemoryRepository(getDatabase(context).memoryDao())
+            _memoryRepository = com.example.data.MemoryRepository(
+                memoryDao = getDatabase(context).memoryDao(),
+                cloudMemoryClient = getCloudMemoryClient()
+            )
         }
         return _memoryRepository!!
     }
