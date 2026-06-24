@@ -18,6 +18,7 @@ This app was cleaned to reduce Play Protect risk when installing APKs outside th
   - `AppNotify.kt`
   - `ReminderScheduler.kt`
   - `AlarmEvent.kt`
+  - `AppVisibility.kt`
 - Removed startup notification permission request.
 - Bumped APK version to `1.0.1` / `versionCode 2`.
 - Debug builds now use package suffix `.debug` so they do not look like the real release app.
