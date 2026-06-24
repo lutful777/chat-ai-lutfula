@@ -61,7 +61,7 @@ android {
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
-to match the convention used in Web projects.
+// to match the convention used in Web projects.
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
