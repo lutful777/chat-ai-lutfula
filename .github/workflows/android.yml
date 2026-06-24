@@ -24,6 +24,9 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Remove invalid Gradle wrapper jar from CI workspace
+        run: rm -f gradle/wrapper/gradle-wrapper.jar
+
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
