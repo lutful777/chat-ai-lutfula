@@ -19,10 +19,10 @@ android {
     // Example:
     // versionCode 1, versionName "1.0"
     // versionCode 2, versionName "1.0.1"
-    // versionCode 3, versionName "1.1"
+    // versionCode 3, versionName "1.0.2"
     // versionCode 4, versionName "2.0"
-    versionCode = 2
-    versionName = "1.0.1"
+    versionCode = 3
+    versionName = "1.0.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
