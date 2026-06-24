@@ -1,24 +1,23 @@
 package com.example.ui.navigation
 
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Scaffold
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import com.example.di.AppContainer
 import com.example.ui.WelcomeScreen
@@ -32,14 +31,14 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
     object Chat : Screen("chat", "Chat", Icons.AutoMirrored.Filled.Chat)
     object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
     object Studio : Screen("studio", "AI Studio", Icons.Filled.Movie)
-    object Market : Screen("market", "Crypto Info", Icons.Filled.Settings)
+    object Trading : Screen("trading", "Trading", Icons.Filled.Settings) // reused icon
 }
 
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
     val context = androidx.compose.ui.platform.LocalContext.current
-
+    
     val settingsRepository = AppContainer.getSettingsRepository(context)
     val chatRepository = AppContainer.getChatRepository(context)
 
@@ -87,7 +86,7 @@ fun AppNavigation() {
                     viewModel = chatViewModel,
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                     onNavigateToStudio = { navController.navigate(Screen.Studio.route) },
-                    onNavigateToTrading = { navController.navigate(Screen.Market.route) }
+                    onNavigateToTrading = { navController.navigate(Screen.Trading.route) }
                 )
             }
             composable(Screen.Settings.route) {
@@ -109,14 +108,14 @@ fun AppNavigation() {
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
-            composable(Screen.Market.route) {
-                val marketInfoViewModel: com.example.ui.market.MarketInfoViewModel = viewModel(
-                    factory = com.example.ui.market.MarketInfoViewModel.Factory(
+            composable(Screen.Trading.route) {
+                val tradingViewModel: com.example.ui.trading.TradingViewModel = viewModel(
+                    factory = com.example.ui.trading.TradingViewModel.Factory(
                         AppContainer.okHttpClient
                     )
                 )
-                com.example.ui.market.MarketInfoScreen(
-                    viewModel = marketInfoViewModel,
+                com.example.ui.trading.TradingScreen(
+                    viewModel = tradingViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

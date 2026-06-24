@@ -4,9 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.example.data.AppDatabase
 import com.example.data.ChatRepository
-import com.example.data.CloudMemoryClient
 import com.example.data.SettingsRepository
-import com.example.network.MetalsBackendInterceptor
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
@@ -17,7 +15,6 @@ object AppContainer {
     private var _database: AppDatabase? = null
     private var _chatRepository: ChatRepository? = null
     private var _memoryRepository: com.example.data.MemoryRepository? = null
-    private var _cloudMemoryClient: CloudMemoryClient? = null
     private var _localStorage: com.example.data.LocalStorage? = null
 
     fun getLocalStorage(context: Context): com.example.data.LocalStorage {
@@ -53,19 +50,9 @@ object AppContainer {
         return _chatRepository!!
     }
 
-    private fun getCloudMemoryClient(): CloudMemoryClient {
-        if (_cloudMemoryClient == null) {
-            _cloudMemoryClient = CloudMemoryClient(okHttpClient)
-        }
-        return _cloudMemoryClient!!
-    }
-
     fun getMemoryRepository(context: Context): com.example.data.MemoryRepository {
         if (_memoryRepository == null) {
-            _memoryRepository = com.example.data.MemoryRepository(
-                memoryDao = getDatabase(context).memoryDao(),
-                cloudMemoryClient = getCloudMemoryClient()
-            )
+            _memoryRepository = com.example.data.MemoryRepository(getDatabase(context).memoryDao())
         }
         return _memoryRepository!!
     }
@@ -78,7 +65,6 @@ object AppContainer {
 
     val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .addInterceptor(MetalsBackendInterceptor())
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)

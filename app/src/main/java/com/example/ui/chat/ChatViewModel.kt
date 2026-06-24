@@ -3,11 +3,8 @@ package com.example.ui.chat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.data.AppGuide
-import com.example.data.ChatRepository
-import com.example.data.ChatSessionEntity
-import com.example.data.MessageEntity
 import com.example.data.SettingsRepository
+import com.example.network.ChatMessage
 import com.example.network.ChatRequest
 import com.example.network.ChatResponse
 import com.example.network.ReasoningConfig
@@ -24,6 +21,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import com.example.data.AppGuide
+import com.example.data.ChatSessionEntity
+import com.example.data.ChatRepository
+import com.example.data.MessageEntity
+import kotlinx.coroutines.flow.map
+import com.google.mlkit.nl.languageid.LanguageIdentification
 
 enum class ChatMode {
     NORMAL, THINK, THINK_DEEPLY
@@ -60,9 +63,7 @@ class ChatViewModel(
 ) : ViewModel() {
 
     private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
-    private val cryptoSearchRepository = com.example.data.CryptoSearchRepository(okHttpClient)
     private val holidayRepository = com.example.data.HolidayRepository(okHttpClient)
-    private val currencyRepository = com.example.data.CurrencyRepository(okHttpClient)
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -78,12 +79,6 @@ class ChatViewModel(
         viewModelScope.launch {
             settingsRepository.model.collect { model ->
                 _uiState.update { it.copy(currentModel = model) }
-            }
-        }
-        viewModelScope.launch {
-            settingsRepository.chatMode.collect { savedMode ->
-                val mode = runCatching { ChatMode.valueOf(savedMode) }.getOrDefault(ChatMode.NORMAL)
-                _uiState.update { it.copy(mode = mode) }
             }
         }
         viewModelScope.launch {
@@ -112,13 +107,13 @@ class ChatViewModel(
             chatRepository.getMessagesForSession(sessionId).collect { messages ->
                 _uiState.update { state ->
                     if (state.currentSessionId == sessionId) {
-                        state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content, it.imageUri) })
+                         state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content, it.imageUri) })
                     } else state
                 }
             }
         }
     }
-
+    
     fun createNewSession() {
         _uiState.update { it.copy(currentSessionId = null, messages = emptyList()) }
         messageJob?.cancel()
@@ -127,7 +122,10 @@ class ChatViewModel(
     fun deleteSession(sessionId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             chatRepository.deleteSession(sessionId)
+            
+            // If the deleted session is the currently active one
             if (_uiState.value.currentSessionId == sessionId) {
+                // Find remaining sessions, excluding the deleted one
                 val remainingSessions = _uiState.value.sessions.filter { it.id != sessionId }
                 if (remainingSessions.isNotEmpty()) {
                     selectSession(remainingSessions.first().id)
@@ -140,26 +138,19 @@ class ChatViewModel(
 
     fun setMode(mode: ChatMode) {
         _uiState.update { it.copy(mode = mode) }
-        viewModelScope.launch {
-            settingsRepository.saveChatMode(mode.name)
-        }
     }
 
     private fun shouldUseRealtimeSearch(messageText: String): Boolean {
         val keywords = listOf(
-            "carikan website", "cari website", "carikan link", "cari link",
-            "gunakan browser", "gunakan browser anda", "browsing",
-            "cari di internet", "cari di web", "search web", "search internet",
-            "cek website", "cek web", "sumber", "link resmi", "rekomendasi website",
-            "website untuk", "dimana daftar", "cari api", "cari proxy",
-            "cari model", "cari provider", "website", "web", "browser", "internet", "link",
-            "ber" + "ita", "ter" + "baru", "hari ini", "seka" + "rang",
-            "per" + "ang", "kon" + "flik", "sera" + "ngan", "harga " + "minyak",
-            "ir" + "an", "is" + "rael", "ame" + "rika", "selat " + "hormuz",
-            "pa" + "sar", "sa" + "ham", "cry" + "pto"
+            "carikan website", "cari website", "carikan link", "cari link", 
+            "gunakan browser", "gunakan browser anda", "browsing", 
+            "cari di internet", "cari di web", "search web", "search internet", 
+            "cek website", "cek web", "sumber", "link resmi", "rekomendasi website", 
+            "website untuk", "dimana daftar", "cari api", "cari proxy", 
+            "cari model", "cari provider", "website", "web", "browser", "internet", "link"
         )
         val textLower = messageText.lowercase()
-        return keywords.any { keyword ->
+        return keywords.any { keyword -> 
             Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(textLower) || textLower.contains(keyword)
         }
     }
@@ -167,7 +158,7 @@ class ChatViewModel(
     private suspend fun handleMemoryCommand(messageText: String, sessionId: Long): Boolean {
         val textLower = messageText.trim().lowercase()
         val memoryEnabled = settingsRepository.memoryEnabled.first()
-
+        
         if (textLower == "memory off") {
             settingsRepository.saveMemoryEnabled(false)
             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Memory is now disabled."))
@@ -207,7 +198,7 @@ class ChatViewModel(
                 return saveMemoryIfSafe(content, sessionId, true)
             }
         }
-
+        
         val deletePrefixes = listOf("lupakan:")
         for (prefix in deletePrefixes) {
             if (textLower.startsWith(prefix)) {
@@ -224,7 +215,7 @@ class ChatViewModel(
     private suspend fun saveMemoryIfSafe(content: String, sessionId: Long, isExplicit: Boolean): Boolean {
         val lower = content.lowercase()
         val criticalSecrets = listOf("password", "api key", "apikey", "token", "secret", "address", "alamat", "phone", "telepon", "bank", "payment", "credit card")
-
+        
         if (criticalSecrets.any { lower.contains(it) }) {
             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ I am not allowed to remember sensitive data like API keys, passwords, addresses, and banking info."))
             return true
@@ -254,7 +245,7 @@ class ChatViewModel(
 
         val previousMessagesSnapshot = _uiState.value.messages.toList()
 
-        _uiState.update {
+        _uiState.update { 
             it.copy(
                 isLoading = true,
                 loadingText = null,
@@ -263,38 +254,26 @@ class ChatViewModel(
         }
 
         viewModelScope.launch(Dispatchers.IO) {
+            val lowerText = messageText.lowercase()
+
             try {
                 var sessionId = _uiState.value.currentSessionId
                 if (sessionId == null) {
                     val title = if (messageText.isNotEmpty()) {
-                        if (messageText.length > 20) messageText.substring(0, 20) + "..." else messageText
+                         if (messageText.length > 20) messageText.substring(0, 20) + "..." else messageText
                     } else "Photo Attached"
                     sessionId = chatRepository.createNewSession(title)
                     _uiState.update { it.copy(currentSessionId = sessionId) }
-                    selectSession(sessionId)
+                    selectSession(sessionId) // to start observing messages for the new session
                 }
-
+                
                 chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "user", content = messageText, imageUri = imageUri))
-
+                
                 if (handleMemoryCommand(messageText, sessionId)) {
                     _uiState.update { it.copy(isLoading = false) }
                     return@launch
                 }
-
-                val earlyCryptoQuery = com.example.data.CryptoDetector.detect(messageText)
-                val currencyQuery = if (earlyCryptoQuery == null) com.example.data.CurrencyDetector.detect(messageText) else null
-                if (currencyQuery != null) {
-                    _uiState.update { it.copy(isLoading = true, loadingText = "Fetching Currency API...") }
-                    val currencyResult = try {
-                        currencyRepository.getExchangeRate(currencyQuery)
-                    } catch (e: Exception) {
-                        "API harga realtime gagal: Currency API ${e.message}\nPair: ${currencyQuery.fromCode} ke ${currencyQuery.toCode}"
-                    }
-                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = currencyResult))
-                    _uiState.update { it.copy(isLoading = false, loadingText = null) }
-                    return@launch
-                }
-
+                
                 val apiKey = settingsRepository.apiKey.first()
                 val baseUrl = settingsRepository.baseUrl.first()
                 val path = settingsRepository.textPath.first()
@@ -314,17 +293,18 @@ class ChatViewModel(
                     }
                     return@launch
                 }
-
+                
                 var searchContext = ""
                 var searchLinks = ""
-
+                
                 val textLower = messageText.lowercase()
                 val isGoldQuery = Regex("\\b(xau|gold|emas)\\b").containsMatchIn(textLower)
-
+                val isFiatQuery = Regex("\\b(usd|idr|eur|gbp|jpy|kurs|mata\\s*uang)\\b").containsMatchIn(textLower)
+                
                 var priceApiSuccess = false
                 var priceApiData = ""
                 var priceApiError = ""
-
+                
                 if (isGoldQuery) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Fetching Metals API...") }
                     var metalsKey = com.example.BuildConfig.METALS_API_KEY
@@ -339,7 +319,7 @@ class ChatViewModel(
                         return@launch
                     } else {
                         try {
-                            val request = Request.Builder()
+                            val request = okhttp3.Request.Builder()
                                 .url("https://api.metals.dev/v1/latest?api_key=$metalsKey&currency=USD&unit=toz")
                                 .build()
                             val response = okHttpClient.newCall(request).execute()
@@ -358,10 +338,10 @@ class ChatViewModel(
                                 } else if (rates != null && rates.has("XAU")) {
                                     price = rates.optDouble("XAU")
                                 }
-
+                                
                                 val priceFormatted = if (price > 0) String.format("%.2f", price) else "N/A"
                                 val finalStr = "Harga XAU realtime:\n1 XAU = $$priceFormatted\nSumber: metals.dev realtime API"
-
+                                
                                 chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = finalStr))
                                 _uiState.update { it.copy(isLoading = false, loadingText = null) }
                                 return@launch
@@ -371,7 +351,7 @@ class ChatViewModel(
                                 _uiState.update { it.copy(isLoading = false, loadingText = null) }
                                 return@launch
                             }
-                        } catch (e: Exception) {
+                        } catch(e: Exception) {
                             val errMsg = "API harga realtime gagal: Metals API ${e.message}"
                             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = errMsg))
                             _uiState.update { it.copy(isLoading = false, loadingText = null) }
@@ -379,26 +359,46 @@ class ChatViewModel(
                         }
                     }
                 }
-
-                val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
-                val cryptoQuery = earlyCryptoQuery
-                val isCryptoQuery = cryptoQuery != null
-                val isNewsOrSentiment = Regex("\\b(" + "ber" + "ita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
-                var useSearch = shouldUseRealtimeSearch(messageText)
-
-                if (isCryptoQuery && cryptoQuery != null) {
-                    _uiState.update { it.copy(isLoading = true, loadingText = "Searching CoinGecko...") }
+                
+                if (isFiatQuery) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Fetching Currency API...") }
                     try {
-                        val coin = cryptoSearchRepository.searchBestMatch(cryptoQuery)
-                        if (coin == null) {
-                            val noCoinMsg = "Crypto tidak ditemukan di CoinGecko untuk: ${cryptoQuery.query}"
-                            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = noCoinMsg))
-                            _uiState.update { it.copy(isLoading = false, loadingText = null) }
-                            return@launch
+                        val request = okhttp3.Request.Builder()
+                            .url("https://api.frankfurter.app/latest?from=USD")
+                            .build()
+                        val response = okHttpClient.newCall(request).execute()
+                        val body = response.body?.string()
+                        if (response.isSuccessful && body != null) {
+                            priceApiData += "Frankfurter (Base USD): $body\n"
+                            priceApiSuccess = true
+                        } else {
+                            priceApiError += "API harga realtime gagal: Frankfurter API ${response.code}\n"
                         }
-
-                        val cryptoData = cryptoPriceRepository.getCryptoPrice(coin)
+                    } catch(e: Exception) {
+                        priceApiError += "API harga realtime gagal: Frankfurter API ${e.message}\n"
+                    }
+                }
+                
+                val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
+                val cryptoIds = mutableListOf<String>()
+                if (Regex("\\b(btc|bitcoin)\\b").containsMatchIn(textLower)) cryptoIds.add("bitcoin")
+                if (Regex("\\b(eth|ethereum)\\b").containsMatchIn(textLower)) cryptoIds.add("ethereum")
+                if (Regex("\\b(sol|solana)\\b").containsMatchIn(textLower)) cryptoIds.add("solana")
+                if (Regex("\\b(bnb|binancecoin)\\b").containsMatchIn(textLower)) cryptoIds.add("binancecoin")
+                if (Regex("\\b(xrp|ripple)\\b").containsMatchIn(textLower)) cryptoIds.add("ripple")
+                if (Regex("\\b(doge|dogecoin)\\b").containsMatchIn(textLower)) cryptoIds.add("dogecoin")
+                if (Regex("\\b(usdt|tether)\\b").containsMatchIn(textLower)) cryptoIds.add("tether")
+                
+                var isCryptoQuery = cryptoIds.isNotEmpty()
+                val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
+                var useSearch = shouldUseRealtimeSearch(messageText)
+                
+                if (isCryptoQuery) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Fetching CoinGecko API...") }
+                    try {
+                        val cryptoData = cryptoPriceRepository.getCryptoPrice(cryptoIds)
                         if (!isNewsOrSentiment && urlsInMessage.isEmpty()) {
+                            // Direct response
                             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = cryptoData))
                             _uiState.update { it.copy(isLoading = false, loadingText = null) }
                             return@launch
@@ -406,15 +406,16 @@ class ChatViewModel(
                             priceApiData += "$cryptoData\n"
                             priceApiSuccess = true
                         }
-                    } catch (e: Exception) {
+                    } catch(e: Exception) {
                         priceApiError += "API harga CoinGecko gagal: ${e.message}\n"
                     }
                 }
-
+                
                 val isHolidayQuery = Regex("\\b(tanggal merah|libur|working day|hari libur|suro|muharram|kalender)\\b").containsMatchIn(textLower)
                 if (isHolidayQuery) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking Holidays...") }
                     try {
+                        // Use a simple date parsing or just assume today/tomorrow based on keywords
                         val cal = java.util.Calendar.getInstance()
                         cal.timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
                         if (textLower.contains("besok")) {
@@ -424,6 +425,7 @@ class ChatViewModel(
                         } else if (textLower.contains("kemarin")) {
                             cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
                         }
+                        // try to extract YYYY-MM-DD
                         val dateRegex = Regex("""(\d{4})-(\d{2})-(\d{2})""")
                         val match = dateRegex.find(textLower)
                         val targetDate = if (match != null) {
@@ -440,7 +442,7 @@ class ChatViewModel(
                         searchContext += "Holiday API Check Failed: ${e.message}\n\n"
                     }
                 }
-
+                
                 if (priceApiData.isNotEmpty() || priceApiError.isNotEmpty()) {
                     searchContext += "Realtime Price API Data:\n"
                     if (priceApiData.isNotEmpty()) searchContext += priceApiData + "\n"
@@ -450,31 +452,32 @@ class ChatViewModel(
                 }
 
                 useSearch = useSearch && urlsInMessage.isEmpty()
-
+                
                 if (priceApiSuccess && !isNewsOrSentiment && !Regex("\\b(saham|ihsg)\\b").containsMatchIn(textLower)) {
                     useSearch = false
                 }
-
+                
                 if (urlsInMessage.isNotEmpty()) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking website...") }
                     val scrapeUrl = urlsInMessage.first()
                     try {
                         val jsonBody = org.json.JSONObject().put("url", scrapeUrl).toString()
                         val fRequestBody = jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType())
-
+                        
                         val fRequest = Request.Builder()
                             .url("https://chat-ai-lutfula.vercel.app/api/read-url")
                             .post(fRequestBody)
                             .build()
-
+                            
                         val fResponse = okHttpClient.newCall(fRequest).execute()
                         val fResponseStr = fResponse.body?.string()
-
+                        
                         if (fResponse.isSuccessful && fResponseStr != null) {
                             try {
                                 val jsonResponse = org.json.JSONObject(fResponseStr)
+                                // Handle if it has data.markdown like Firecrawl or just markdown
                                 val markdown = jsonResponse.optJSONObject("data")?.optString("markdown") ?: jsonResponse.optString("markdown", fResponseStr)
-
+                                
                                 if (markdown.isNotEmpty()) {
                                     val safeMarkdown = if (markdown.length > 10000) markdown.substring(0, 10000) + "...\n[Content Truncated]" else markdown
                                     searchContext = "Use the following scraped web content to answer the user's query:\n\nUrl: $scrapeUrl\nContent:\n$safeMarkdown\n\nInstructions: Answer based on the website content. If the user asked a specific question, answer it. If the user only sent a link without a specific question, summarize what the website is, its main function, and important details. NEVER say you cannot open links or browse websites. You MUST use this extracted text to provide your answer."
@@ -482,6 +485,7 @@ class ChatViewModel(
                                     searchContext = "I tried to read $scrapeUrl but it returned empty. Explain to the user."
                                 }
                             } catch (e: Exception) {
+                                // If response is not JSON, just pass it as text
                                 val safeMarkdown = if (fResponseStr.length > 10000) fResponseStr.substring(0, 10000) + "...\n[Content Truncated]" else fResponseStr
                                 searchContext = "Use the following scraped web content to answer the user's query:\n\nUrl: $scrapeUrl\nContent:\n$safeMarkdown\n\nInstructions: Answer based on the website content."
                             }
@@ -501,20 +505,20 @@ class ChatViewModel(
                             .url("https://chat-ai-lutfula.vercel.app/api/search?q=$queryUrlEncoded")
                             .get()
                             .build()
-
+                            
                         val fResponse = okHttpClient.newCall(fRequest).execute()
                         val fResponseStr = fResponse.body?.string()
-
+                        
                         if (fResponse.isSuccessful && fResponseStr != null) {
                             try {
                                 val jsonResponse = org.json.JSONObject(fResponseStr)
                                 val dataArray = jsonResponse.optJSONArray("data")
-
+                                
                                 if (dataArray != null && dataArray.length() > 0) {
                                     val topResults = mutableListOf<String>()
                                     val sourcesList = mutableListOf<String>()
                                     val maxItems = minOf(3, dataArray.length())
-
+                                    
                                     for (i in 0 until maxItems) {
                                         val item = dataArray.optJSONObject(i)
                                         if (item != null) {
@@ -543,25 +547,27 @@ class ChatViewModel(
                     }
                 }
 
+                // Construct full endpoint URL
                 val baseUrlCleaned = baseUrl.trimEnd('/')
                 val pathCleaned = if (path.startsWith("/")) path else "/$path"
                 val endpoint = "$baseUrlCleaned$pathCleaned"
 
+                // Prepare system prompt based on mode
                 val mode = _uiState.value.mode
                 var systemPrompt = when (mode) {
                     ChatMode.NORMAL -> "You are a helpful AI assistant. Provide fast, simple, and direct answers."
                     ChatMode.THINK -> "You are a helpful AI assistant. Approach tasks with careful reasoning and thorough checking. Explain your thought process."
                     ChatMode.THINK_DEEPLY -> "You are a helpful AI assistant. Provide deeper analysis, detailed debugging, and exhaustive step-by-step reasoning. You are better for coding and complex tasks."
                 }
-
+                
                 if (langPref == "id") {
                     systemPrompt += "\n\nAlways respond in Bahasa Indonesia. Use clear, simple Indonesian unless the user asks for another language."
                 }
-
+                
                 systemPrompt += "\n\n" + AppGuide.TEXT
-
+                
                 val antiHallucination = """
-
+                    
                     ATURAN PENTING (ANTI-HALUSINASI TOOL):
                     Kamu tidak boleh mengklaim telah:
                     - menjalankan date
@@ -576,29 +582,29 @@ class ChatViewModel(
                     Jawaban default harus ringkas, jelas, dan langsung. Jangan terlalu panjang kecuali user meminta detail.
                 """.trimIndent()
                 systemPrompt += "\n\n$antiHallucination"
-
+                
                 if (memoryEnabled) {
                     val allMemories = memoryRepository.getAllMemories()
                     val queryWords = messageText.lowercase().split("\\s+".toRegex()).filter { it.length > 2 }
-
+                    
                     val scoredMemories = allMemories.map { mem ->
                         val memLower = mem.content.lowercase()
                         val score = queryWords.count { memLower.contains(it) }
                         mem to score
                     }.sortedByDescending { it.second }
-
+                    
                     val relevantMemories = if (scoredMemories.any { it.second > 0 }) {
-                        scoredMemories.filter { it.second > 0 }.take(10).map { it.first }
+                         scoredMemories.filter { it.second > 0 }.take(10).map { it.first }
                     } else {
-                        allMemories.take(5)
+                         allMemories.take(5)
                     }
 
                     if (relevantMemories.isNotEmpty()) {
-                        systemPrompt += "\n\nUser memory:\n" + relevantMemories.joinToString("\n") { "- ${it.content}" } +
-                            "\nUse these memories only when relevant. Do not mention memory unless the user asks."
+                        systemPrompt += "\n\nUser memory:\n" + relevantMemories.joinToString("\n") { "- ${it.content}" } + 
+                                        "\nUse these memories only when relevant. Do not mention memory unless the user asks."
                     }
                 }
-
+                
                 if (searchContext.isNotEmpty()) {
                     systemPrompt += "\n\n$searchContext"
                 }
@@ -610,7 +616,8 @@ class ChatViewModel(
 
                 val chatMessages = mutableListOf<com.example.network.ChatRequestMessage>()
                 chatMessages.add(com.example.network.ChatRequestMessage(role = "system", content = listOf(com.example.network.VisionContent(type = "text", text = systemPrompt))))
-
+                
+                // Track if image or file sending failed
                 var attachmentSendFailedMsg: String? = null
                 var hasAnyImage = false
 
@@ -619,7 +626,7 @@ class ChatViewModel(
                     if (!attachmentUriStr.isNullOrEmpty()) {
                         val uri = android.net.Uri.parse(attachmentUriStr)
                         val mimeType = applicationContext.contentResolver.getType(uri) ?: ""
-
+                        
                         if (mimeType.startsWith("image/")) {
                             hasAnyImage = true
                             val b64 = uriToBase64(attachmentUriStr)
@@ -630,14 +637,14 @@ class ChatViewModel(
                                 if (isNew) {
                                     attachmentSendFailedMsg = "Gagal memproses/mengirim gambar. Harap periksa izin akses atau gambar tidak valid."
                                 }
-                                parts.add(com.example.network.VisionContent(type = "text", text = content))
+                                parts.add(com.example.network.VisionContent(type = "text", text = content)) // fallback to text only for old messages if permission lost
                             }
                         } else {
                             var fileText: String? = null
                             try {
                                 applicationContext.contentResolver.openInputStream(uri)?.use { stream ->
                                     val size = stream.available()
-                                    if (size < 5 * 1024 * 1024) {
+                                    if (size < 5 * 1024 * 1024) { // Max 5MB for text extraction inline
                                         fileText = stream.bufferedReader().readText()
                                     } else {
                                         fileText = "File terlalu besar untuk dibaca langsung."
@@ -646,7 +653,7 @@ class ChatViewModel(
                             } catch (e: Exception) {
                                 android.util.Log.e("ChatViewModel", "Error reading file", e)
                             }
-
+                            
                             if (fileText != null) {
                                 if (mimeType.startsWith("text/") || mimeType.contains("json") || mimeType.contains("csv")) {
                                     parts.add(com.example.network.VisionContent(type = "text", text = "$content\n\n[Attached File Content]:\n$fileText"))
@@ -668,16 +675,18 @@ class ChatViewModel(
                     }
                     com.example.network.ChatRequestMessage(role = role, content = parts)
                 }
-
+                
+                // Map existing messages
                 previousMessagesSnapshot.filter { !it.content.startsWith("⚠️") }.forEach {
                     chatMessages.add(makeMessage(it.role, it.content, it.imageUri, false))
                 }
-
+                
                 val localInstruction = localStorage.getInstruction()
                 if (localInstruction.isNotEmpty()) {
                     chatMessages.add(com.example.network.ChatRequestMessage(role = "system", content = listOf(com.example.network.VisionContent(type = "text", text = "CRITICAL USER PREFERENCE (ALWAYS FOLLOW THIS IN YOUR NEXT RESPONSE):\n$localInstruction"))))
                 }
 
+                // Manually append the latest user message
                 val finalUserMessage = "$timeContext\n\nPERTANYAAN USER:\n$messageText"
                 chatMessages.add(makeMessage("user", finalUserMessage, imageUri, true))
 
@@ -690,14 +699,14 @@ class ChatViewModel(
                     }
                     return@launch
                 }
-
+                
                 if (hasAnyImage && !supportsVision) {
-                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Model ini tidak mendukung membaca gambar. Pilih model vision."))
-                    _uiState.update { it.copy(isLoading = false, error = "Model ini tidak mendukung membaca gambar. Pilih model vision.") }
-                    return@launch
+                   chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "⚠️ Model ini tidak mendukung membaca gambar. Pilih model vision."))
+                   _uiState.update { it.copy(isLoading = false, error = "Model ini tidak mendukung membaca gambar. Pilih model vision.") }
+                   return@launch
                 }
 
-                val enableReasoningParameter = true
+                val enableReasoningParameter = true // Settings flag
 
                 val reasoning = if (enableReasoningParameter) {
                     when (mode) {
@@ -730,7 +739,7 @@ class ChatViewModel(
                 if (response.isSuccessful && responseBodyStr != null) {
                     val responseAdapter = moshi.adapter(ChatResponse::class.java)
                     val chatResponse = responseAdapter.fromJson(responseBodyStr)
-
+                    
                     if (chatResponse?.error != null) {
                         _uiState.update {
                             it.copy(
@@ -745,9 +754,9 @@ class ChatViewModel(
                         } else {
                             assistantReply
                         }
-
+                        
                         chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = finalReply))
-
+                        
                         _uiState.update {
                             it.copy(isLoading = false)
                         }
@@ -793,7 +802,7 @@ class ChatViewModel(
             inputStream?.close()
             if (bytes != null) {
                 val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT or android.util.Base64.NO_WRAP)
-                val mimeType = resolver.getType(uri) ?: "image/jpeg"
+                var mimeType = resolver.getType(uri) ?: "image/jpeg"
                 "data:$mimeType;base64,$base64"
             } else null
         } catch (e: Exception) {
@@ -835,7 +844,7 @@ fun getCurrentTimeContext(): String {
         java.util.Locale.forLanguageTag("id-ID")
     )
     val timeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
-
+    
     val dateStr = now.format(dateFormatter)
     val timeStr = now.format(timeFormatter)
     val isPastMaghrib = now.hour >= 18
