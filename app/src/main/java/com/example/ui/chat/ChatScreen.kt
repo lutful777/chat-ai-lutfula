@@ -61,8 +61,7 @@ import com.example.ui.theme.PrimaryNeon
 fun ChatScreen(
     viewModel: ChatViewModel,
     onNavigateToSettings: () -> Unit = {},
-    onNavigateToStudio: () -> Unit = {},
-    onNavigateToTrading: () -> Unit = {}
+    onNavigateToStudio: () -> Unit = {}
 ) {
     val localContext = androidx.compose.ui.platform.LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -522,13 +521,6 @@ fun ChatScreen(
                             onClick = {
                                 showMenu = false
                                 onNavigateToStudio()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Trading", color = Color.White) },
-                            onClick = {
-                                showMenu = false
-                                onNavigateToTrading()
                             }
                         )
                     }

@@ -31,7 +31,6 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
     object Chat : Screen("chat", "Chat", Icons.AutoMirrored.Filled.Chat)
     object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
     object Studio : Screen("studio", "AI Studio", Icons.Filled.Movie)
-    object Trading : Screen("trading", "Trading", Icons.Filled.Settings) // reused icon
 }
 
 @Composable
@@ -85,8 +84,7 @@ fun AppNavigation() {
                 ChatScreen(
                     viewModel = chatViewModel,
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                    onNavigateToStudio = { navController.navigate(Screen.Studio.route) },
-                    onNavigateToTrading = { navController.navigate(Screen.Trading.route) }
+                    onNavigateToStudio = { navController.navigate(Screen.Studio.route) }
                 )
             }
             composable(Screen.Settings.route) {
@@ -105,17 +103,6 @@ fun AppNavigation() {
                 )
                 com.example.ui.studio.StudioScreen(
                     viewModel = studioViewModel,
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-            composable(Screen.Trading.route) {
-                val tradingViewModel: com.example.ui.trading.TradingViewModel = viewModel(
-                    factory = com.example.ui.trading.TradingViewModel.Factory(
-                        AppContainer.okHttpClient
-                    )
-                )
-                com.example.ui.trading.TradingScreen(
-                    viewModel = tradingViewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
