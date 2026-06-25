@@ -1,3 +1,49 @@
+function cleanText(input) {
+  return String(input || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shortText(input, max = 420) {
+  const text = cleanText(input);
+  if (text.length <= max) return text;
+  return text.slice(0, max).replace(/\s+\S*$/, '') + '...';
+}
+
+async function readPageWithBrowserless(pageUrl) {
+  const tokenName = 'BROWSERLESS' + '_TOKEN';
+  const token = process.env[tokenName];
+  if (!token || !pageUrl) return '';
+
+  const base = process.env.BROWSERLESS_URL || 'https://chrome.browserless.io/content';
+  const joiner = base.includes('?') ? '&' : '?';
+  const endpoint = base + joiner + 'token=' + encodeURIComponent(token);
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: pageUrl,
+      gotoOptions: {
+        waitUntil: 'networkidle2',
+        timeout: 15000
+      }
+    })
+  });
+
+  if (!response.ok) return '';
+  const html = await response.text();
+  return shortText(html, 420);
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -32,11 +78,31 @@ export default async function handler(req, res) {
     if (!r.ok) return res.status(r.status).json({ error: 'Search provider failed', status: r.status, details: j });
 
     const rows = Array.isArray(j.data) ? j.data : (Array.isArray(j.results) ? j.results : []);
-    const data = rows.map((x) => ({
-      title: x.title || x.metadata?.title || 'No Title',
-      description: x.description || x.snippet || x.content || x.markdown || '',
-      url: x.url || x.sourceURL || x.metadata?.sourceURL || ''
-    }));
+    const data = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const x = rows[i] || {};
+      const pageUrl = x.url || x.sourceURL || x.metadata?.sourceURL || '';
+      let description = x.description || x.snippet || x.content || x.markdown || '';
+      let reader = 'firecrawl';
+
+      if (i < 3 && pageUrl && cleanText(description).length < 120) {
+        try {
+          const pageText = await readPageWithBrowserless(pageUrl);
+          if (pageText && pageText.length > cleanText(description).length) {
+            description = pageText;
+            reader = 'browserless';
+          }
+        } catch (_) {}
+      }
+
+      data.push({
+        title: x.title || x.metadata?.title || 'No Title',
+        description: shortText(description, 420),
+        url: pageUrl,
+        reader
+      });
+    }
 
     return res.status(200).json({ query: q, data });
   } catch (e) {
