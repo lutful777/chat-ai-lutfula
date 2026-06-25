@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   if (!q) return res.status(400).json({ error: 'Missing query parameter q' });
 
-  const envName = ['FIRE', 'CRAWL', 'API', 'KEY'].join('_');
+  const envName = 'FIRECRAWL' + '_API_KEY';
   const token = process.env[envName];
   if (!token) return res.status(500).json({ error: envName + ' not set' });
 
