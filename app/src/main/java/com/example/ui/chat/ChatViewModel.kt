@@ -388,13 +388,7 @@ class ChatViewModel(
                 
                 var isCryptoQuery = cryptoIds.isNotEmpty()
                 val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
-                val searchQuery = getRealtimeSearchQuery(messageText)
-                var useSearch = searchQuery != null
-                if (useSearch && searchQuery!!.isEmpty()) {
-                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
-                    _uiState.update { it.copy(isLoading = false) }
-                    return@launch
-                }
+                var useSearch = false
                 
                 if (isCryptoQuery) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Fetching CoinGecko API...") }
@@ -501,53 +495,6 @@ class ChatViewModel(
                         searchContext = "I tried to open $scrapeUrl, tapi terjadi error: ${e.message}"
                     }
                     _uiState.update { it.copy(loadingText = null) }
-                } else if (useSearch) {
-                    try {
-                        val queryUrlEncoded = java.net.URLEncoder.encode(searchQuery ?: messageText, "UTF-8")
-                        val fRequest = Request.Builder()
-                            .url("https://chat-ai-lutfula.vercel.app/api/search?q=$queryUrlEncoded")
-                            .get()
-                            .build()
-                            
-                        val fResponse = okHttpClient.newCall(fRequest).execute()
-                        val fResponseStr = fResponse.body?.string()
-                        
-                        if (fResponse.isSuccessful && fResponseStr != null) {
-                            try {
-                                val jsonResponse = org.json.JSONObject(fResponseStr)
-                                val dataArray = jsonResponse.optJSONArray("data")
-                                
-                                if (dataArray != null && dataArray.length() > 0) {
-                                    val topResults = mutableListOf<String>()
-                                    val sourcesList = mutableListOf<String>()
-                                    val maxItems = minOf(3, dataArray.length())
-                                    
-                                    for (i in 0 until maxItems) {
-                                        val item = dataArray.optJSONObject(i)
-                                        if (item != null) {
-                                            val title = item.optString("title", "No Title")
-                                            val description = item.optString("description", "")
-                                            val url = item.optString("url", "")
-                                            topResults.add("- Title: $title\n  Description: $description\n  URL: $url")
-                                            sourcesList.add("• $title\n  $url")
-                                        }
-                                    }
-                                    searchContext = "Use the following real-time search results to answer the user's query:\n\n" + topResults.joinToString("\n\n")
-                                    searchLinks = "\n\nSources:\n" + sourcesList.joinToString("\n")
-                                } else {
-                                    searchContext = "Search berjalan tetapi tidak ada hasil relevan. Jangan mengarang."
-                                }
-                            } catch (e: Exception) {
-                                searchContext = "Search results format error: ${e.message}"
-                            }
-                        } else {
-                            val errCode = fResponse.code
-                            val errMsg = fResponseStr ?: "Unknown error"
-                            searchContext = "Search gagal (HTTP $errCode - $errMsg). Katakan jujur."
-                        }
-                    } catch (e: Exception) {
-                        searchContext = "Search gagal (${e.message}). Katakan jujur."
-                    }
                 }
 
                 // Construct full endpoint URL
@@ -693,6 +640,19 @@ class ChatViewModel(
                 val finalUserMessage = "$timeContext\n\nPERTANYAAN USER:\n$messageText"
                 chatMessages.add(makeMessage("user", finalUserMessage, imageUri, true))
 
+                // Check for Firecrawl search trigger
+                val searchQuery = getRealtimeSearchQuery(messageText)
+                if (searchQuery != null) {
+                    if (searchQuery.isEmpty()) {
+                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
+                        _uiState.update { it.copy(isLoading = false) }
+                        return@launch
+                    }
+                    
+                    handleFirecrawlSearch(sessionId, searchQuery)
+                    return@launch
+                }
+                
                 if (attachmentSendFailedMsg != null) {
                     _uiState.update {
                         it.copy(
@@ -793,6 +753,61 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    private suspend fun handleFirecrawlSearch(sessionId: Long, query: String) {
+        _uiState.update { it.copy(isLoading = true, loadingText = "Searching with Firecrawl...") }
+        try {
+            val apiKey = com.example.BuildConfig.FIRECRAWL_API_KEY
+            if (apiKey.isBlank() || apiKey == "YOUR_FIRECRAWL_API_KEY") {
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Firecrawl API key tidak dikonfigurasi."))
+                _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                return
+            }
+
+            val jsonBody = org.json.JSONObject()
+                .put("query", query)
+                .put("limit", 5)
+                .toString()
+            
+            val requestBody = jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType())
+            
+            val request = Request.Builder()
+                .url("https://api.firecrawl.dev/v1/search")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+                
+            val response = okHttpClient.newCall(request).execute()
+            val responseStr = response.body?.string()
+            
+            if (response.isSuccessful && responseStr != null) {
+                val jsonResponse = org.json.JSONObject(responseStr)
+                val dataArray = jsonResponse.optJSONArray("data")
+                
+                if (dataArray != null && dataArray.length() > 0) {
+                    val sb = StringBuilder("Hasil pencarian realtime untuk: $query\n\n")
+                    for (i in 0 until minOf(5, dataArray.length())) {
+                        val item = dataArray.optJSONObject(i)
+                        if (item != null) {
+                            val title = item.optString("title", "No Title")
+                            val description = item.optString("description", "")
+                            val url = item.optString("url", "")
+                            sb.append("${i + 1}. $title\n   $description\n   Sumber: $url\n\n")
+                        }
+                    }
+                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = sb.toString()))
+                } else {
+                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Tidak ditemukan hasil untuk: $query"))
+                }
+            } else {
+                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Firecrawl gagal mengambil data realtime. HTTP ${response.code} - ${responseStr ?: "Error"}"))
+            }
+        } catch (e: Exception) {
+            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Firecrawl gagal mengambil data realtime: ${e.message}"))
+        }
+        _uiState.update { it.copy(isLoading = false, loadingText = null) }
     }
 
     private fun uriToBase64(uriStr: String?): String? {
