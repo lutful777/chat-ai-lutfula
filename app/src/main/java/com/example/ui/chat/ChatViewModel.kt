@@ -107,6 +107,21 @@ class ChatViewModel(
         return if (first == "#berita" || first == "#cari" || first == "#browser") parts.getOrNull(1)?.trim() ?: "" else null
     }
 
+    private fun firstWebsiteRoot(textInput: String): String? {
+        val raw = Regex("https?://[^\\s]+").find(textInput)?.value ?: return null
+        val cleaned = raw.trimEnd('.', ',', ')', ']', '}', '"')
+        return try {
+            val uri = java.net.URI(cleaned)
+            val scheme = uri.scheme ?: return null
+            val host = uri.host ?: return null
+            if (scheme != "http" && scheme != "https") return null
+            val port = if (uri.port > 0) ":${uri.port}" else ""
+            "$scheme://$host$port"
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun formatRealtime(raw: String, query: String): String {
         return try {
             val json = org.json.JSONObject(raw)
@@ -130,6 +145,31 @@ class ChatViewModel(
         }
     }
 
+    private fun formatWebsiteContext(raw: String, rootUrl: String): String {
+        return try {
+            val json = org.json.JSONObject(raw)
+            val arr = json.optJSONArray("data") ?: json.optJSONArray("results")
+                ?: return "WEBSITE_CONTEXT_FROM_BACKEND:\nRoot website: $rootUrl\nData website tidak tersedia."
+            val out = StringBuilder()
+            out.append("WEBSITE_CONTEXT_FROM_BACKEND:\n")
+            out.append("Root website: $rootUrl\n")
+            for (i in 0 until minOf(3, arr.length())) {
+                val item = arr.optJSONObject(i) ?: continue
+                val title = item.optString("title", "Tanpa judul")
+                val desc = item.optString("description", item.optString("snippet", ""))
+                val link = item.optString("url", item.optString("sourceURL", ""))
+                val reader = item.optString("reader", "backend")
+                out.append("\nSumber ${i + 1}: $title\n")
+                out.append("URL: ${if (link.isBlank()) rootUrl else link}\n")
+                out.append("Reader: $reader\n")
+                if (desc.isNotBlank()) out.append("Isi ringkas halaman: ${desc.take(900)}\n")
+            }
+            out.toString().trim()
+        } catch (e: Exception) {
+            "WEBSITE_CONTEXT_FROM_BACKEND:\nRoot website: $rootUrl\nGagal membaca data website: ${e.message}"
+        }
+    }
+
     private fun searchViaVercel(query: String): Result<String> {
         return try {
             val encoded = java.net.URLEncoder.encode(query, "UTF-8")
@@ -141,6 +181,25 @@ class ChatViewModel(
             val bodyText = response.body?.string().orEmpty()
             if (response.isSuccessful && bodyText.isNotBlank()) {
                 Result.success(formatRealtime(bodyText, query))
+            } else {
+                Result.failure(Exception("HTTP ${response.code}: ${bodyText.take(250)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun readWebsiteViaVercel(rootUrl: String): Result<String> {
+        return try {
+            val encoded = java.net.URLEncoder.encode(rootUrl, "UTF-8")
+            val request = Request.Builder()
+                .url("https://chat-ai-lutfula.vercel.app/api/search?q=$encoded&url=$encoded")
+                .get()
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            val bodyText = response.body?.string().orEmpty()
+            if (response.isSuccessful && bodyText.isNotBlank()) {
+                Result.success(formatWebsiteContext(bodyText, rootUrl))
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${bodyText.take(250)}"))
             }
@@ -196,6 +255,14 @@ class ChatViewModel(
                     return@launch
                 }
 
+                val websiteRoot = firstWebsiteRoot(text)
+                val websiteContext = if (websiteRoot != null) {
+                    _uiState.update { it.copy(loadingText = "Membaca website...") }
+                    readWebsiteViaVercel(websiteRoot).getOrElse { e ->
+                        "WEBSITE_CONTEXT_FROM_BACKEND:\nRoot website: $websiteRoot\nGagal membaca website dari backend: ${e.message}"
+                    }
+                } else null
+
                 var systemPrompt = when (_uiState.value.mode) {
                     ChatMode.NORMAL -> "You are a helpful AI assistant. Provide fast, simple, and direct answers."
                     ChatMode.THINK -> "You are a helpful AI assistant. Reason carefully but keep the final answer clear."
@@ -204,6 +271,9 @@ class ChatViewModel(
                 if (langPref == "id") systemPrompt += "\n\nAlways respond in Bahasa Indonesia."
                 systemPrompt += "\n\n" + AppGuide.TEXT
                 systemPrompt += "\n\n" + getCurrentTimeContext()
+                if (websiteRoot != null) {
+                    systemPrompt += "\n\nJika user mengirim link website, jelaskan fungsi website berdasarkan WEBSITE_CONTEXT_FROM_BACKEND. Fokus pada root domain, bukan hanya path link. Jawab dengan jelas: fungsi website, untuk apa website itu dipakai, fitur/isi penting yang terlihat, lalu akhiri dengan kalimat 'Kesimpulan: website ini fungsinya ...'. Jangan mengarang jika data tidak cukup."
+                }
 
                 val chatMessages = mutableListOf<com.example.network.ChatRequestMessage>()
                 chatMessages.add(com.example.network.ChatRequestMessage(role = "system", content = listOf(com.example.network.VisionContent(type = "text", text = systemPrompt))))
@@ -218,8 +288,24 @@ class ChatViewModel(
                     return@launch
                 }
 
+                val finalUserText = if (websiteRoot != null && websiteContext != null) {
+                    """
+User mengirim link:
+$text
+
+Root website yang harus dijelaskan:
+$websiteRoot
+
+$websiteContext
+
+Tugas:
+Jelaskan fungsi website tersebut dengan jelas. Jangan hanya merangkum pendek. Terangkan untuk apa website itu, apa fungsi utamanya, dan jika data cukup jelaskan fitur/layanan yang terlihat. Di bagian akhir wajib beri keterangan:
+Kesimpulan: website ini fungsinya ...
+""".trimIndent()
+                } else text
+
                 val userParts = mutableListOf<com.example.network.VisionContent>()
-                userParts.add(com.example.network.VisionContent(type = "text", text = text))
+                userParts.add(com.example.network.VisionContent(type = "text", text = finalUserText))
                 if (imageUri != null) {
                     val dataUrl = uriToBase64(imageUri)
                     if (dataUrl != null) userParts.add(com.example.network.VisionContent(type = "image_url", imageUrl = com.example.network.VisionImageUrl(url = dataUrl)))
