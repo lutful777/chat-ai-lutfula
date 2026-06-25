@@ -65,7 +65,7 @@ class ChatViewModel(
     private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
     private val holidayRepository = com.example.data.HolidayRepository(okHttpClient)
 
-    private val _uiState = MutableStateFlow(ChatUiState())
+    private val _uiState = MutableStateFlow(ChatUiState(mode = try { ChatMode.valueOf(localStorage.getChatMode()) } catch (e: Exception) { ChatMode.NORMAL }))
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private var messageJob: kotlinx.coroutines.Job? = null
@@ -138,21 +138,18 @@ class ChatViewModel(
 
     fun setMode(mode: ChatMode) {
         _uiState.update { it.copy(mode = mode) }
+        localStorage.saveChatMode(mode.name)
     }
 
-    private fun shouldUseRealtimeSearch(messageText: String): Boolean {
-        val keywords = listOf(
-            "carikan website", "cari website", "carikan link", "cari link", 
-            "gunakan browser", "gunakan browser anda", "browsing", 
-            "cari di internet", "cari di web", "search web", "search internet", 
-            "cek website", "cek web", "sumber", "link resmi", "rekomendasi website", 
-            "website untuk", "dimana daftar", "cari api", "cari proxy", 
-            "cari model", "cari provider", "website", "web", "browser", "internet", "link"
-        )
-        val textLower = messageText.lowercase()
-        return keywords.any { keyword -> 
-            Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(textLower) || textLower.contains(keyword)
+    private fun getRealtimeSearchQuery(messageText: String): String? {
+        val text = messageText.trim()
+        val triggers = listOf("#berita", "#browser", "#cari")
+        for (trigger in triggers) {
+            if (text.lowercase().startsWith(trigger)) {
+                return text.substring(trigger.length).trim()
+            }
         }
+        return null
     }
 
     private suspend fun handleMemoryCommand(messageText: String, sessionId: Long): Boolean {
@@ -391,7 +388,13 @@ class ChatViewModel(
                 
                 var isCryptoQuery = cryptoIds.isNotEmpty()
                 val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
-                var useSearch = shouldUseRealtimeSearch(messageText)
+                val searchQuery = getRealtimeSearchQuery(messageText)
+                var useSearch = searchQuery != null
+                if (useSearch && searchQuery!!.isEmpty()) {
+                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
+                    _uiState.update { it.copy(isLoading = false) }
+                    return@launch
+                }
                 
                 if (isCryptoQuery) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Fetching CoinGecko API...") }
@@ -500,7 +503,7 @@ class ChatViewModel(
                     _uiState.update { it.copy(loadingText = null) }
                 } else if (useSearch) {
                     try {
-                        val queryUrlEncoded = java.net.URLEncoder.encode(messageText, "UTF-8")
+                        val queryUrlEncoded = java.net.URLEncoder.encode(searchQuery ?: messageText, "UTF-8")
                         val fRequest = Request.Builder()
                             .url("https://chat-ai-lutfula.vercel.app/api/search?q=$queryUrlEncoded")
                             .get()

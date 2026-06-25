@@ -23,4 +23,12 @@ class LocalStorage(context: Context) {
     fun getInstruction(): String {
         return prefs.getString("custom_instruction", "") ?: ""
     }
+
+    fun saveChatMode(mode: String): Boolean {
+        return prefs.edit().putString("chat_mode", mode).commit()
+    }
+
+    fun getChatMode(): String {
+        return prefs.getString("chat_mode", "NORMAL") ?: "NORMAL"
+    }
 }
