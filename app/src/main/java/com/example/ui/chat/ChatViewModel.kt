@@ -47,6 +47,14 @@ data class ChatUiState(
     val mode: ChatMode = ChatMode.NORMAL
 )
 
+private data class MemoryCommand(
+    val endpoint: String,
+    val action: String,
+    val content: String = "",
+    val loadingText: String,
+    val blockedMessage: String? = null
+)
+
 class ChatViewModel(
     private val applicationContext: android.content.Context,
     private val settingsRepository: SettingsRepository,
@@ -142,6 +150,75 @@ class ChatViewModel(
         return if (hasCoin || hasCryptoIntent) text else null
     }
 
+    private fun sensitiveMemoryWarning(content: String): String? {
+        val lower = content.lowercase()
+        val sensitive = listOf(
+            "password", "passwd", "kata sandi", "sandi",
+            "api key", "apikey", "token", "secret", "private key",
+            "alamat", "address", "telepon", "phone", "nomor hp",
+            "bank", "rekening", "credit card", "kartu kredit", "payment"
+        )
+        return if (sensitive.any { lower.contains(it) }) {
+            "⚠️ Saya tidak menyimpan data sensitif seperti API key, password, token, alamat, nomor telepon, atau data bank."
+        } else null
+    }
+
+    private fun memoryCommand(textInput: String): MemoryCommand? {
+        val text = textInput.trim()
+        if (text.isEmpty() || text.startsWith("#")) return null
+        val lower = text.lowercase()
+
+        if (lower == "cek memory cloud" || lower == "test memory cloud" || lower == "cek appwrite" || lower == "appwrite test") {
+            return MemoryCommand(
+                endpoint = "memory-cloud",
+                action = "test",
+                content = text,
+                loadingText = "Mengecek memory cloud..."
+            )
+        }
+
+        if (lower == "memory off") {
+            return MemoryCommand("memory", "disable", text, "Mematikan memory...")
+        }
+        if (lower == "memory on") {
+            return MemoryCommand("memory", "enable", text, "Mengaktifkan memory...")
+        }
+        if (lower == "hapus memory") {
+            return MemoryCommand("memory", "clear", text, "Menghapus memory...")
+        }
+        if (lower == "lihat memory" || lower == "debug lokal") {
+            return MemoryCommand("memory", "list", text, "Membaca memory...")
+        }
+
+        val savePrefixes = listOf("ingat:", "ingat ini:", "simpan dimemory anda:", "remember:")
+        for (prefix in savePrefixes) {
+            if (lower.startsWith(prefix)) {
+                val content = text.substring(prefix.length).trim()
+                if (content.isBlank()) {
+                    return MemoryCommand("memory", "empty", text, "Menyimpan memory...", "Isi memory kosong. Tulis setelah $prefix")
+                }
+                val warning = sensitiveMemoryWarning(content)
+                if (warning != null) {
+                    return MemoryCommand("memory", "blocked", content, "Menyimpan memory...", warning)
+                }
+                return MemoryCommand("memory", "save", content, "Menyimpan memory...")
+            }
+        }
+
+        val deletePrefixes = listOf("lupakan:")
+        for (prefix in deletePrefixes) {
+            if (lower.startsWith(prefix)) {
+                val content = text.substring(prefix.length).trim()
+                if (content.isBlank()) {
+                    return MemoryCommand("memory", "empty", text, "Menghapus memory...", "Isi yang ingin dilupakan kosong. Tulis setelah $prefix")
+                }
+                return MemoryCommand("memory", "delete", content, "Menghapus memory...")
+            }
+        }
+
+        return null
+    }
+
     private fun firstWebsiteRoot(textInput: String): String? {
         val raw = Regex("https?://[^\\s]+").find(textInput)?.value ?: return null
         val cleaned = raw.trimEnd('.', ',', ')', ']', '}', '"')
@@ -232,6 +309,43 @@ class ChatViewModel(
         }
     }
 
+    private fun formatMemory(raw: String, cloud: Boolean): String {
+        return try {
+            val json = org.json.JSONObject(raw)
+            val error = json.optString("error", "")
+            if (error.isNotBlank()) {
+                val message = json.optString("message", "")
+                return if (message.isBlank()) "Memory API gagal: $error" else "Memory API gagal: $error\n$message"
+            }
+
+            val message = json.optString("message", "")
+            val status = json.optString("status", "")
+            val title = if (cloud) "Memory cloud" else "Memory"
+            val out = StringBuilder()
+            if (message.isNotBlank()) out.append(message) else out.append("$title selesai diproses.")
+            if (status.isNotBlank()) out.append("\nStatus: $status")
+
+            val arr = json.optJSONArray("memories") ?: json.optJSONArray("data") ?: json.optJSONArray("documents")
+            if (arr != null && arr.length() > 0) {
+                out.append("\n\nDaftar memory:\n")
+                for (i in 0 until minOf(20, arr.length())) {
+                    val item = arr.optJSONObject(i)
+                    val content = item?.optString("content")
+                        ?: item?.optString("text")
+                        ?: item?.optString("memory")
+                        ?: item?.optString("summary")
+                        ?: item?.toString()
+                        ?: ""
+                    if (content.isNotBlank()) out.append("- ${content.take(300)}\n")
+                }
+            }
+
+            out.toString().trim()
+        } catch (e: Exception) {
+            "Memory API gagal membaca hasil: ${e.message}"
+        }
+    }
+
     private fun formatWebsiteContext(raw: String, rootUrl: String): String {
         return try {
             val json = org.json.JSONObject(raw)
@@ -295,6 +409,30 @@ class ChatViewModel(
         }
     }
 
+    private fun memoryViaVercel(command: MemoryCommand): Result<String> {
+        return try {
+            val json = org.json.JSONObject()
+                .put("action", command.action)
+                .put("content", command.content)
+                .put("command", command.content)
+            val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url("https://chat-ai-lutfula.vercel.app/api/${command.endpoint}")
+                .addHeader("Content-Type", "application/json")
+                .post(body)
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            val bodyText = response.body?.string().orEmpty()
+            if (response.isSuccessful && bodyText.isNotBlank()) {
+                Result.success(formatMemory(bodyText, command.endpoint == "memory-cloud"))
+            } else {
+                Result.failure(Exception("HTTP ${response.code}: ${bodyText.take(250)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun readWebsiteViaVercel(rootUrl: String): Result<String> {
         return try {
             val encoded = java.net.URLEncoder.encode(rootUrl, "UTF-8")
@@ -341,6 +479,20 @@ class ChatViewModel(
                     }
                     _uiState.update { it.copy(loadingText = "Mencari data realtime...") }
                     val answer = searchViaVercel(query).getOrElse { e -> "Search realtime gagal dari backend Vercel.\n\n${e.message}" }
+                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = answer))
+                    _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                    return@launch
+                }
+
+                val memory = if (imageUri == null) memoryCommand(text) else null
+                if (memory != null) {
+                    if (memory.blockedMessage != null) {
+                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = memory.blockedMessage))
+                        _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                        return@launch
+                    }
+                    _uiState.update { it.copy(loadingText = memory.loadingText) }
+                    val answer = memoryViaVercel(memory).getOrElse { e -> "Memory gagal dari backend Vercel.\n\n${e.message}" }
                     chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = answer))
                     _uiState.update { it.copy(isLoading = false, loadingText = null) }
                     return@launch
