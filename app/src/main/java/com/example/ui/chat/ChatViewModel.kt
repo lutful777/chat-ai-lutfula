@@ -107,6 +107,41 @@ class ChatViewModel(
         return if (first == "#berita" || first == "#cari" || first == "#browser") parts.getOrNull(1)?.trim() ?: "" else null
     }
 
+    private fun cryptoQuery(textInput: String): String? {
+        val text = textInput.trim()
+        if (text.isEmpty() || text.startsWith("#")) return null
+
+        val lower = text.lowercase()
+        val coinKeywords = listOf(
+            "btc", "bitcoin",
+            "eth", "ethereum",
+            "sol", "solana",
+            "bnb", "binancecoin",
+            "xrp", "ripple",
+            "doge", "dogecoin",
+            "usdt", "tether",
+            "ada", "cardano",
+            "trx", "tron",
+            "ton", "toncoin",
+            "matic", "polygon",
+            "shib", "shiba",
+            "pepe"
+        )
+        val hasCoin = coinKeywords.any { keyword ->
+            Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(lower)
+        }
+        val hasCryptoIntent = listOf(
+            "crypto",
+            "kripto",
+            "cryptocurrency",
+            "harga crypto",
+            "harga kripto",
+            "price crypto"
+        ).any { lower.contains(it) }
+
+        return if (hasCoin || hasCryptoIntent) text else null
+    }
+
     private fun firstWebsiteRoot(textInput: String): String? {
         val raw = Regex("https?://[^\\s]+").find(textInput)?.value ?: return null
         val cleaned = raw.trimEnd('.', ',', ')', ']', '}', '"')
@@ -120,6 +155,20 @@ class ChatViewModel(
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun formatUsd(value: Double): String {
+        return if (value.isNaN() || value <= 0.0) "-" else "\$" + java.lang.String.format(java.util.Locale.US, "%,.2f", value)
+    }
+
+    private fun formatIdr(value: Double): String {
+        return if (value.isNaN() || value <= 0.0) "-" else "Rp" + java.lang.String.format(java.util.Locale("id", "ID"), "%,.0f", value)
+    }
+
+    private fun formatPercent(value: Double): String {
+        if (value.isNaN()) return "-"
+        val prefix = if (value > 0.0) "+" else ""
+        return prefix + java.lang.String.format(java.util.Locale.US, "%.2f", value) + "%"
     }
 
     private fun formatRealtime(raw: String, query: String): String {
@@ -142,6 +191,44 @@ class ChatViewModel(
             out.toString().trim()
         } catch (e: Exception) {
             "Realtime search gagal membaca hasil: ${e.message}"
+        }
+    }
+
+    private fun formatCrypto(raw: String, query: String): String {
+        return try {
+            val json = org.json.JSONObject(raw)
+            val error = json.optString("error", "")
+            if (error.isNotBlank()) {
+                val message = json.optString("message", "")
+                return if (message.isBlank()) "Crypto API gagal: $error" else "Crypto API gagal: $error\n$message"
+            }
+
+            val arr = json.optJSONArray("data") ?: return "Crypto API berjalan, tetapi hasil belum bisa dibaca."
+            if (arr.length() == 0) return "Belum ada data crypto yang cocok untuk: $query"
+
+            val source = json.optString("source", "CoinGecko")
+            val out = StringBuilder("Harga crypto realtime untuk: $query\n\n")
+            for (i in 0 until minOf(5, arr.length())) {
+                val item = arr.optJSONObject(i) ?: continue
+                val symbol = item.optString("symbol", item.optString("id", "crypto")).uppercase()
+                val name = item.optString("name", symbol)
+                val usd = item.optDouble("usd", Double.NaN)
+                val idr = item.optDouble("idr", Double.NaN)
+                val change24h = item.optDouble("usd_24h_change", Double.NaN)
+                val marketCap = item.optDouble("usd_market_cap", Double.NaN)
+                val volume = item.optDouble("usd_24h_vol", Double.NaN)
+
+                out.append("${i + 1}. $name ($symbol)\n")
+                out.append("   1 $symbol = ${formatUsd(usd)}\n")
+                out.append("   1 $symbol = ${formatIdr(idr)}\n")
+                out.append("   Perubahan 24 jam = ${formatPercent(change24h)}\n")
+                out.append("   Market cap = ${formatUsd(marketCap)}\n")
+                out.append("   Volume 24 jam = ${formatUsd(volume)}\n\n")
+            }
+            out.append("Sumber: $source realtime API")
+            out.toString().trim()
+        } catch (e: Exception) {
+            "Crypto API gagal membaca hasil: ${e.message}"
         }
     }
 
@@ -181,6 +268,25 @@ class ChatViewModel(
             val bodyText = response.body?.string().orEmpty()
             if (response.isSuccessful && bodyText.isNotBlank()) {
                 Result.success(formatRealtime(bodyText, query))
+            } else {
+                Result.failure(Exception("HTTP ${response.code}: ${bodyText.take(250)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun cryptoViaVercel(query: String): Result<String> {
+        return try {
+            val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+            val request = Request.Builder()
+                .url("https://chat-ai-lutfula.vercel.app/api/crypto?q=$encoded")
+                .get()
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            val bodyText = response.body?.string().orEmpty()
+            if (response.isSuccessful && bodyText.isNotBlank()) {
+                Result.success(formatCrypto(bodyText, query))
             } else {
                 Result.failure(Exception("HTTP ${response.code}: ${bodyText.take(250)}"))
             }
@@ -235,6 +341,15 @@ class ChatViewModel(
                     }
                     _uiState.update { it.copy(loadingText = "Mencari data realtime...") }
                     val answer = searchViaVercel(query).getOrElse { e -> "Search realtime gagal dari backend Vercel.\n\n${e.message}" }
+                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = answer))
+                    _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                    return@launch
+                }
+
+                val crypto = if (imageUri == null) cryptoQuery(text) else null
+                if (crypto != null) {
+                    _uiState.update { it.copy(loadingText = "Mencari harga crypto...") }
+                    val answer = cryptoViaVercel(crypto).getOrElse { e -> "Crypto realtime gagal dari backend Vercel.\n\n${e.message}" }
                     chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = answer))
                     _uiState.update { it.copy(isLoading = false, loadingText = null) }
                     return@launch
