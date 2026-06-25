@@ -161,6 +161,21 @@ class ChatViewModel(
         return if (hasCoin || hasCryptoIntent) text else null
     }
 
+    private fun metalsQuery(textInput: String): String? {
+        val text = textInput.trim()
+        if (text.isEmpty() || text.startsWith("#")) return null
+        val lower = text.lowercase()
+        val metalKeywords = listOf(
+            "xau", "xauusd", "gold", "emas",
+            "xag", "xagusd", "silver", "perak",
+            "xpt", "xptusd", "platinum"
+        )
+        val hasMetal = metalKeywords.any { keyword ->
+            Regex("\\b${Regex.escape(keyword)}\\b").containsMatchIn(lower)
+        }
+        return if (hasMetal) text else null
+    }
+
     private fun sensitiveMemoryWarning(content: String): String? {
         val lower = content.lowercase()
         val sensitive = listOf(
@@ -320,6 +335,35 @@ class ChatViewModel(
         }
     }
 
+    private fun formatMetals(raw: String, query: String): String {
+        return try {
+            val json = org.json.JSONObject(raw)
+            val error = json.optString("error", "")
+            if (error.isNotBlank()) {
+                val message = json.optString("message", "")
+                return if (message.isBlank()) "Metals API gagal: $error" else "Metals API gagal: $error\n$message"
+            }
+
+            val arr = json.optJSONArray("data") ?: return "Metals API berjalan, tetapi hasil belum bisa dibaca."
+            if (arr.length() == 0) return "Belum ada data metals yang cocok untuk: $query"
+
+            val source = json.optString("source", "Metals API")
+            val out = StringBuilder("Harga metals realtime untuk: $query\n\n")
+            for (i in 0 until minOf(3, arr.length())) {
+                val item = arr.optJSONObject(i) ?: continue
+                val symbol = item.optString("symbol", "XAU")
+                val name = item.optString("name", symbol)
+                val usd = item.optDouble("usd_per_troy_ounce", Double.NaN)
+                out.append("${i + 1}. $name ($symbol/USD)\n")
+                out.append("   1 troy ounce = ${formatUsd(usd)}\n\n")
+            }
+            out.append("Sumber: $source realtime API")
+            out.toString().trim()
+        } catch (e: Exception) {
+            "Metals API gagal membaca hasil: ${e.message}"
+        }
+    }
+
     private fun formatMemory(raw: String, cloud: Boolean): String {
         return try {
             val json = org.json.JSONObject(raw)
@@ -421,6 +465,25 @@ class ChatViewModel(
         }
     }
 
+    private fun metalsViaVercel(query: String): Result<String> {
+        return try {
+            val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+            val request = Request.Builder()
+                .url("https://chat-ai-lutfula.vercel.app/api/metals?q=$encoded")
+                .get()
+                .build()
+            val response = okHttpClient.newCall(request).execute()
+            val bodyText = response.body?.string().orEmpty()
+            if (response.isSuccessful && bodyText.isNotBlank()) {
+                Result.success(formatMetals(bodyText, query))
+            } else {
+                Result.failure(Exception("HTTP ${response.code}: ${bodyText.take(250)}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun memoryViaVercel(command: MemoryCommand): Result<String> {
         return try {
             val json = org.json.JSONObject()
@@ -505,6 +568,15 @@ class ChatViewModel(
                     }
                     _uiState.update { it.copy(loadingText = memory.loadingText) }
                     val answer = memoryViaVercel(memory).getOrElse { e -> "Memory gagal dari backend Vercel.\n\n${e.message}" }
+                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = answer))
+                    _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                    return@launch
+                }
+
+                val metals = if (imageUri == null) metalsQuery(text) else null
+                if (metals != null) {
+                    _uiState.update { it.copy(loadingText = "Mencari harga metals...") }
+                    val answer = metalsViaVercel(metals).getOrElse { e -> "Metals realtime gagal dari backend Vercel.\n\n${e.message}" }
                     chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = answer))
                     _uiState.update { it.copy(isLoading = false, loadingText = null) }
                     return@launch
