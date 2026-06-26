@@ -642,7 +642,7 @@ class ChatViewModel(
 
                 // Check for Firecrawl search trigger
                 val searchQuery = getRealtimeSearchQuery(messageText)
-                if (searchQuery != null) {
+                if (searchQuery != null && urlsInMessage.isEmpty()) {
                     if (searchQuery.isEmpty()) {
                         chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
                         _uiState.update { it.copy(isLoading = false) }
@@ -756,57 +756,79 @@ class ChatViewModel(
     }
 
     private suspend fun handleFirecrawlSearch(sessionId: Long, query: String) {
-        _uiState.update { it.copy(isLoading = true, loadingText = "Searching with Firecrawl...") }
-        try {
-            val apiKey = com.example.BuildConfig.FIRECRAWL_API_KEY
-            if (apiKey.isBlank() || apiKey == "YOUR_FIRECRAWL_API_KEY") {
-                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Firecrawl API key tidak dikonfigurasi."))
-                _uiState.update { it.copy(isLoading = false, loadingText = null) }
-                return
-            }
+        _uiState.update { it.copy(isLoading = true, loadingText = "Searching with Vercel...") }
 
-            val jsonBody = org.json.JSONObject()
-                .put("query", query)
-                .put("limit", 5)
-                .toString()
-            
-            val requestBody = jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType())
-            
+        try {
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+
             val request = Request.Builder()
-                .url("https://api.firecrawl.dev/v1/search")
-                .addHeader("Authorization", "Bearer $apiKey")
-                .addHeader("Content-Type", "application/json")
-                .post(requestBody)
+                .url("https://chat-ai-lutfula.vercel.app/api/search?q=$encodedQuery&mode=cari")
+                .get()
                 .build()
-                
+
             val response = okHttpClient.newCall(request).execute()
             val responseStr = response.body?.string()
-            
+
             if (response.isSuccessful && responseStr != null) {
                 val jsonResponse = org.json.JSONObject(responseStr)
                 val dataArray = jsonResponse.optJSONArray("data")
-                
+
                 if (dataArray != null && dataArray.length() > 0) {
                     val sb = StringBuilder("Hasil pencarian realtime untuk: $query\n\n")
+
                     for (i in 0 until minOf(5, dataArray.length())) {
                         val item = dataArray.optJSONObject(i)
                         if (item != null) {
                             val title = item.optString("title", "No Title")
                             val description = item.optString("description", "")
                             val url = item.optString("url", "")
-                            sb.append("${i + 1}. $title\n   $description\n   Sumber: $url\n\n")
+
+                            sb.append("${i + 1}. $title\n")
+                            if (description.isNotBlank()) {
+                                sb.append("   $description\n")
+                            }
+                            if (url.isNotBlank()) {
+                                sb.append("   Sumber: $url\n")
+                            }
+                            sb.append("\n")
                         }
                     }
-                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = sb.toString()))
+
+                    chatRepository.insertMessage(
+                        MessageEntity(
+                            sessionId = sessionId,
+                            role = "assistant",
+                            content = sb.toString()
+                        )
+                    )
                 } else {
-                    chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Tidak ditemukan hasil untuk: $query"))
+                    chatRepository.insertMessage(
+                        MessageEntity(
+                            sessionId = sessionId,
+                            role = "assistant",
+                            content = "Tidak ditemukan hasil untuk: $query"
+                        )
+                    )
                 }
             } else {
-                chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Firecrawl gagal mengambil data realtime. HTTP ${response.code} - ${responseStr ?: "Error"}"))
+                chatRepository.insertMessage(
+                    MessageEntity(
+                        sessionId = sessionId,
+                        role = "assistant",
+                        content = "Vercel search gagal. HTTP ${response.code} - ${responseStr ?: "Error"}"
+                    )
+                )
             }
         } catch (e: Exception) {
-            chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Firecrawl gagal mengambil data realtime: ${e.message}"))
+            chatRepository.insertMessage(
+                MessageEntity(
+                    sessionId = sessionId,
+                    role = "assistant",
+                    content = "Vercel search gagal mengambil data realtime: ${e.message}"
+                )
+            )
         }
+
         _uiState.update { it.copy(isLoading = false, loadingText = null) }
     }
 
