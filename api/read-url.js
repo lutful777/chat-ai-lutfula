@@ -49,6 +49,7 @@ async function readPageWithBrowserless(pageUrl) {
   });
 
   if (!response.ok) return null;
+
   const html = await response.text();
   const markdown = shortText(html, 10000);
   if (!markdown) return null;
@@ -76,13 +77,20 @@ async function readPageWithFirecrawl(pageUrl) {
   });
 
   const text = await response.text();
+
   let json;
-  try { json = JSON.parse(text); } catch (_) { json = { raw: text }; }
+  try {
+    json = JSON.parse(text);
+  } catch (_) {
+    json = { raw: text };
+  }
+
   if (!response.ok) return null;
 
   const data = json.data || json;
   const markdown = data.markdown || data.content || data.html || json.markdown || json.html || '';
   const cleaned = shortText(markdown, 10000);
+
   if (!cleaned) return null;
 
   return {
@@ -97,13 +105,24 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      error: 'Method not allowed'
+    });
+  }
 
   const pageUrl = normalizedUrl(req.body && req.body.url);
-  if (!pageUrl) return res.status(400).json({ error: 'Missing or invalid url' });
+
+  if (!pageUrl) {
+    return res.status(400).json({
+      error: 'Missing or invalid url'
+    });
+  }
 
   try {
     const browserlessResult = await readPageWithBrowserless(pageUrl);
+
     if (browserlessResult) {
       return res.status(200).json({
         url: pageUrl,
@@ -118,6 +137,7 @@ export default async function handler(req, res) {
     }
 
     const firecrawlResult = await readPageWithFirecrawl(pageUrl);
+
     if (firecrawlResult) {
       return res.status(200).json({
         url: pageUrl,
