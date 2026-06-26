@@ -18,11 +18,11 @@ function shortText(input, max = 420) {
   return text.slice(0, max).replace(/\s+\S*$/, '') + '...';
 }
 
-function rootUrl(input) {
+function normalizedUrl(input) {
   try {
     const u = new URL(String(input || '').trim());
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
-    return u.origin;
+    return u.toString();
   } catch (_) {
     return '';
   }
@@ -31,7 +31,7 @@ function rootUrl(input) {
 async function readPageWithBrowserless(pageUrl) {
   const tokenName = 'BROWSERLESS' + '_TOKEN';
   const token = process.env[tokenName];
-  if (!token || !pageUrl) return '';
+  if (!token || !pageUrl) return null;
 
   const base = process.env.BROWSERLESS_URL || 'https://chrome.browserless.io/content';
   const joiner = base.includes('?') ? '&' : '?';
@@ -49,9 +49,52 @@ async function readPageWithBrowserless(pageUrl) {
     })
   });
 
-  if (!response.ok) return '';
+  if (!response.ok) return null;
   const html = await response.text();
-  return shortText(html, 900);
+  const text = shortText(html, 1200);
+  if (!text) return null;
+  return {
+    title: pageUrl,
+    description: text,
+    url: pageUrl,
+    reader: 'browserless'
+  };
+}
+
+async function readPageWithFirecrawl(pageUrl, token) {
+  if (!token || !pageUrl) return null;
+
+  const url = 'https://' + ['api', 'firecrawl', 'dev'].join('.') + '/v1/scrape';
+  const h = {};
+  h['Content-Type'] = 'application/json';
+  h[['Authori', 'zation'].join('')] = ['Bearer', token].join(' ');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: h,
+    body: JSON.stringify({
+      url: pageUrl,
+      formats: ['markdown', 'html']
+    })
+  });
+
+  const t = await response.text();
+  let j;
+  try { j = JSON.parse(t); } catch (_) { j = { raw: t }; }
+  if (!response.ok) return null;
+
+  const data = j.data || j;
+  const metadata = data.metadata || {};
+  const description = data.markdown || data.content || data.html || j.markdown || j.html || '';
+  const text = shortText(description, 1200);
+  if (!text) return null;
+
+  return {
+    title: metadata.title || pageUrl,
+    description: text,
+    url: pageUrl,
+    reader: 'firecrawl-scrape'
+  };
 }
 
 export default async function handler(req, res) {
@@ -64,27 +107,32 @@ export default async function handler(req, res) {
 
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   const mode = typeof req.query.mode === 'string' ? req.query.mode.trim().toLowerCase() : 'cari';
-  const targetRoot = rootUrl(req.query.url);
-  if (!q && !targetRoot) return res.status(400).json({ error: 'Missing query parameter q or url' });
+  const targetUrl = normalizedUrl(req.query.url);
+  if (!q && !targetUrl) return res.status(400).json({ error: 'Missing query parameter q or url' });
 
   const envName = 'FIRECRAWL' + '_API_KEY';
   const token = process.env[envName];
   if (!token) return res.status(500).json({ error: envName + ' not set' });
 
   try {
-    if (targetRoot) {
-      const pageText = await readPageWithBrowserless(targetRoot);
-      if (pageText) {
+    if (targetUrl) {
+      const browserlessResult = await readPageWithBrowserless(targetUrl);
+      if (browserlessResult) {
         return res.status(200).json({
-          query: q || targetRoot,
+          query: q || targetUrl,
           mode: 'website',
-          url: targetRoot,
-          data: [{
-            title: targetRoot,
-            description: pageText,
-            url: targetRoot,
-            reader: 'browserless'
-          }]
+          url: targetUrl,
+          data: [browserlessResult]
+        });
+      }
+
+      const firecrawlPage = await readPageWithFirecrawl(targetUrl, token);
+      if (firecrawlPage) {
+        return res.status(200).json({
+          query: q || targetUrl,
+          mode: 'website',
+          url: targetUrl,
+          data: [firecrawlPage]
         });
       }
     }
@@ -96,7 +144,7 @@ export default async function handler(req, res) {
     h['Content-Type'] = 'application/json';
     h[['Authori', 'zation'].join('')] = ['Bearer', token].join(' ');
 
-    const searchBody = { query: targetRoot || q, limit: searchLimit };
+    const searchBody = { query: targetUrl || q, limit: searchLimit };
     if (isBeritaMode) searchBody.tbs = 'sbd:1,qdr:d';
 
     const r = await fetch(url, {
@@ -118,14 +166,14 @@ export default async function handler(req, res) {
       const x = rows[i] || {};
       const pageUrl = x.url || x.sourceURL || x.metadata?.sourceURL || '';
       let description = x.description || x.snippet || x.content || x.markdown || '';
-      let reader = 'firecrawl';
+      let reader = 'firecrawl-search';
 
       if (i < 3 && pageUrl && cleanText(description).length < 120) {
         try {
-          const pageText = await readPageWithBrowserless(pageUrl);
-          if (pageText && pageText.length > cleanText(description).length) {
-            description = pageText;
-            reader = 'browserless';
+          const browserlessPage = await readPageWithBrowserless(pageUrl);
+          if (browserlessPage && browserlessPage.description.length > cleanText(description).length) {
+            description = browserlessPage.description;
+            reader = browserlessPage.reader;
           }
         } catch (_) {}
       }
@@ -138,7 +186,7 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({ query: targetRoot || q, mode, limit: searchLimit, todayOnly: isBeritaMode, data });
+    return res.status(200).json({ query: targetUrl || q, mode, limit: searchLimit, todayOnly: isBeritaMode, data });
   } catch (e) {
     return res.status(500).json({ error: 'Realtime search failed', message: e instanceof Error ? e.message : String(e) });
   }
