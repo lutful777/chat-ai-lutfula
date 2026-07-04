@@ -208,7 +208,7 @@ export default async function handler(req, res) {
     }
 
     const uniqueCandidates = [];
-    const seen = new Set(evidenceMap.keys());
+    const seen = new Set();
     for (const item of readCandidates) {
       if (seen.has(item.url)) continue;
       seen.add(item.url);
