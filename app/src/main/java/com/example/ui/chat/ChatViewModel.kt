@@ -432,8 +432,9 @@ class ChatViewModel(
                         } else {
                             cal.time
                         }
-                        val holidayInfo = holidayRepository.isWorkingDay(targetDate)
-                        searchContext += "Holiday API Result for the requested date:\n$holidayInfo\n\nInstruction: Use the Holiday API result to answer if it is a holiday/tanggal merah and the reason.\n\n"
+                        val holidayCountryCode = resolveHolidayCountryCode(messageText)
+                        val holidayInfo = holidayRepository.isWorkingDay(targetDate, holidayCountryCode)
+                        searchContext += "Holiday API Result for country $holidayCountryCode and the requested date:\n$holidayInfo\n\nInstruction: Use this result only for country $holidayCountryCode. Answer whether it is a holiday/tanggal merah and explain the reason. If the user did not mention a country, country $holidayCountryCode is the Indonesia default.\n\n"
                         useSearch = false
                     } catch (e: Exception) {
                         searchContext += "Holiday API Check Failed: ${e.message}\n\n"
