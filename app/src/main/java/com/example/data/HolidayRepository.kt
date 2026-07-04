@@ -2,49 +2,49 @@ package com.example.data
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
-import java.util.Calendar
 
 class HolidayRepository(private val okHttpClient: OkHttpClient) {
-    // Cache: "YYYY-MM-DD" -> Holiday result String
+    // Cache: "COUNTRY:YYYY-MM-DD" -> Holiday result String
     private val cache = mutableMapOf<String, String>()
 
-    // Use default country ID
+    // Indonesia remains the default when the user does not mention a country.
     private val defaultCountry = "ID"
+    private val supportedCountryCodes = Locale.getISOCountries().toSet()
 
-    fun isWorkingDay(targetDate: Date): String {
-        val sdf = SimpleDateFormat("yyyy-MM-dd")
+    fun isWorkingDay(targetDate: Date, countryCode: String = defaultCountry): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
         sdf.timeZone = TimeZone.getTimeZone("Asia/Jakarta")
         val dateStr = sdf.format(targetDate)
+        val normalizedCountry = countryCode
+            .uppercase(Locale.ROOT)
+            .takeIf { it in supportedCountryCodes }
+            ?: defaultCountry
+        val cacheKey = "$normalizedCountry:$dateStr"
 
-        if (cache.containsKey(dateStr)) {
-            return cache[dateStr] ?: ""
-        }
+        cache[cacheKey]?.let { return it }
 
-        try {
+        return try {
             val request = Request.Builder()
-                .url("https://chat-ai-lutfula.vercel.app/api/holiday?date=$dateStr&country=$defaultCountry")
+                .url("https://chat-ai-lutfula.vercel.app/api/holiday?date=$dateStr&country=$normalizedCountry")
                 .build()
-                
+
             val response = okHttpClient.newCall(request).execute()
             val body = response.body?.string()
-            
+
             if (response.isSuccessful && body != null) {
-                // If your backend returns plain text, just return it. 
-                // Or if it returns JSON, parse it as needed. Since the backend handles it, let's just assume it returns text.
-                // Assuming it returns text directly:
-                val resultStr = JSONObject(body).optString("result", body) // If it returns JSON { result: "..." } or text
-                cache[dateStr] = resultStr
-                return resultStr
+                val resultStr = JSONObject(body).optString("result", body)
+                cache[cacheKey] = resultStr
+                resultStr
             } else {
-                return "Backend realtime belum tersedia atau gagal mengambil data."
+                "Backend realtime belum tersedia atau gagal mengambil data."
             }
         } catch (e: Exception) {
-            return "Backend realtime belum tersedia atau gagal mengambil data."
+            "Backend realtime belum tersedia atau gagal mengambil data."
         }
     }
 }
