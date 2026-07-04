@@ -183,28 +183,18 @@ internal object SafeWebContextResolver {
 
     private fun requestsWholeSite(text: String): Boolean {
         val lower = text.lowercase()
-        val phrases = listOf(
-            "baca seluruh website",
-            "baca website secara lengkap",
-            "baca website lengkap",
-            "baca seluruh situs",
-            "baca semua halaman",
-            "seluruh halaman website",
-            "seluruh halaman situs",
-            "semua isi website",
-            "semua isi situs",
-            "telusuri seluruh website",
-            "telusuri seluruh situs",
-            "petakan seluruh website",
-            "crawl seluruh website",
-            "scan seluruh website",
-            "whole website",
-            "entire website",
-            "all public pages",
-            "read the whole website",
-            "read the entire website"
-        )
-        return phrases.any(lower::contains)
+        val mentionsWebsite = listOf(
+            "website", "situs", "web site", "site"
+        ).any(lower::contains)
+        val requestsCompleteness = listOf(
+            "seluruh", "semua halaman", "semua isi", "secara lengkap",
+            "dengan lengkap", "keseluruhan", "whole", "entire", "all public pages"
+        ).any(lower::contains)
+        val explicitPhrases = listOf(
+            "crawl semua", "crawl seluruh", "scan semua", "scan seluruh",
+            "petakan semua", "petakan seluruh"
+        ).any(lower::contains)
+        return (mentionsWebsite && requestsCompleteness) || explicitPhrases
     }
 
     private fun inferResearchDepth(text: String, hasUrl: Boolean): String {
