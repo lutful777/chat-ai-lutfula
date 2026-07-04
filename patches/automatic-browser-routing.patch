@@ -1,0 +1,263 @@
+diff --git a/app/src/main/java/com/example/ui/chat/ChatViewModel.kt b/app/src/main/java/com/example/ui/chat/ChatViewModel.kt
+index 62af824..0000000 100644
+--- a/app/src/main/java/com/example/ui/chat/ChatViewModel.kt
++++ b/app/src/main/java/com/example/ui/chat/ChatViewModel.kt
+@@ -66,6 +66,7 @@ class ChatViewModel(
+ 
+     private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
+     private val holidayRepository = com.example.data.HolidayRepository(okHttpClient)
++    private val automaticBrowserRepository = AutomaticBrowserRepository(okHttpClient)
+ 
+     private val _uiState = MutableStateFlow(ChatUiState(mode = try { ChatMode.valueOf(localStorage.getChatMode()) } catch (e: Exception) { ChatMode.NORMAL }))
+     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+@@ -294,8 +295,17 @@ class ChatViewModel(
+                 var searchLinks = ""
+                 
+                 val textLower = messageText.lowercase()
++                val urlsInMessage = resolveBrowserUrls(
++                    currentMessage = messageText,
++                    previousMessages = previousMessagesSnapshot.map { it.content }
++                )
++                val explicitBrowserQuery = getRealtimeSearchQuery(messageText)
++                val explicitBrowserRequested = explicitBrowserQuery != null
++                val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik|artikel)\\b").containsMatchIn(textLower)
++                val browserNewsIntent = Regex("\\b(berita|news|sentimen|artikel|website|situs|browser)\\b").containsMatchIn(textLower)
+                 val isGoldQuery = Regex("\\b(xau|gold|emas)\\b").containsMatchIn(textLower)
+                 val isFiatQuery = Regex("\\b(usd|idr|eur|gbp|jpy|kurs|mata\\s*uang)\\b").containsMatchIn(textLower)
+@@ -303,7 +313,7 @@ class ChatViewModel(
+                 var priceApiData = ""
+                 var priceApiError = ""
+                 
+-                if (isGoldQuery) {
++                if (isGoldQuery && urlsInMessage.isEmpty() && !explicitBrowserRequested && !browserNewsIntent) {
+                     _uiState.update { it.copy(isLoading = true, loadingText = "Fetching Metals API...") }
+                     var metalsKey = com.example.BuildConfig.METALS_API_KEY
+                     if (metalsKey.isBlank() || metalsKey == "YOUR_METALS_API_KEY") {
+@@ -378,7 +388,6 @@ class ChatViewModel(
+                     }
+                 }
+                 
+-                val urlsInMessage = Regex("(https?://[\\w-]+(\\.[\\w-]+)+(/([\\w- ./?%&=]*)?)?)").findAll(messageText).map { it.value }.toList()
+                 val cryptoIds = mutableListOf<String>()
+                 if (Regex("\\b(btc|bitcoin)\\b").containsMatchIn(textLower)) cryptoIds.add("bitcoin")
+                 if (Regex("\\b(eth|ethereum)\\b").containsMatchIn(textLower)) cryptoIds.add("ethereum")
+@@ -389,8 +398,7 @@ class ChatViewModel(
+                 if (Regex("\\b(doge|dogecoin)\\b").containsMatchIn(textLower)) cryptoIds.add("dogecoin")
+                 if (Regex("\\b(usdt|tether)\\b").containsMatchIn(textLower)) cryptoIds.add("tether")
+                 
+-                var isCryptoQuery = cryptoIds.isNotEmpty()
+-                val isNewsOrSentiment = Regex("\\b(berita|news|sentimen|kenapa|positif|negatif|turun|naik)\\b").containsMatchIn(textLower)
++                val isCryptoQuery = cryptoIds.isNotEmpty()
+                 var useSearch = false
+                 
+                 if (isCryptoQuery) {
+@@ -398,7 +406,7 @@ class ChatViewModel(
+                     _uiState.update { it.copy(isLoading = true, loadingText = "Fetching CoinGecko API...") }
+                     try {
+                         val cryptoData = cryptoPriceRepository.getCryptoPrice(cryptoIds)
+-                        if (!isNewsOrSentiment && urlsInMessage.isEmpty()) {
++                        if (!isNewsOrSentiment && urlsInMessage.isEmpty() && !explicitBrowserRequested) {
+                             // Direct response
+                             chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = cryptoData))
+                             _uiState.update { it.copy(isLoading = false, loadingText = null) }
+@@ -442,6 +450,39 @@ class ChatViewModel(
+                     }
+                 }
++
++                val automaticBrowserQuery = if (
++                    explicitBrowserQuery == null &&
++                    urlsInMessage.isEmpty() &&
++                    shouldAutomaticallySearchWeb(messageText) &&
++                    !isHolidayQuery &&
++                    !isFiatQuery &&
++                    (!isCryptoQuery || isNewsOrSentiment) &&
++                    (!isGoldQuery || browserNewsIntent)
++                ) {
++                    messageText
++                } else {
++                    null
++                }
++                val browserSearchQuery = explicitBrowserQuery ?: automaticBrowserQuery
++
++                if (browserSearchQuery != null && urlsInMessage.isEmpty()) {
++                    if (browserSearchQuery.isBlank()) {
++                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
++                        _uiState.update { it.copy(isLoading = false, loadingText = null) }
++                        return@launch
++                    }
++
++                    _uiState.update { it.copy(isLoading = true, loadingText = "Mencari informasi web...") }
++                    val browserResult = automaticBrowserRepository.search(
++                        query = browserSearchQuery,
++                        mode = resolveBrowserSearchMode(messageText)
++                    )
++                    searchContext += browserResult.promptContext + "\n\n"
++                    searchLinks += browserResult.sourceLinks
++                    _uiState.update { it.copy(loadingText = null) }
++                }
+                 
+                 if (priceApiData.isNotEmpty() || priceApiError.isNotEmpty()) {
+                     searchContext += "Realtime Price API Data:\n"
+@@ -458,47 +499,11 @@ class ChatViewModel(
+                 }
+                 
+                 if (urlsInMessage.isNotEmpty()) {
+-                    _uiState.update { it.copy(isLoading = true, loadingText = "Checking website...") }
+-                    val scrapeUrl = urlsInMessage.first()
+-                    try {
+-                        val jsonBody = org.json.JSONObject().put("url", scrapeUrl).toString()
+-                        val fRequestBody = jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType())
+-                        
+-                        val fRequest = Request.Builder()
+-                            .url("https://chat-ai-lutfula.vercel.app/api/read-url")
+-                            .post(fRequestBody)
+-                            .build()
+-                            
+-                        val fResponse = okHttpClient.newCall(fRequest).execute()
+-                        val fResponseStr = fResponse.body?.string()
+-                        
+-                        if (fResponse.isSuccessful && fResponseStr != null) {
+-                            try {
+-                                val jsonResponse = org.json.JSONObject(fResponseStr)
+-                                // Handle if it has data.markdown like Firecrawl or just markdown
+-                                val markdown = jsonResponse.optJSONObject("data")?.optString("markdown") ?: jsonResponse.optString("markdown", fResponseStr)
+-                                
+-                                if (markdown.isNotEmpty()) {
+-                                    val safeMarkdown = if (markdown.length > 10000) markdown.substring(0, 10000) + "...\n[Content Truncated]" else markdown
+-                                    searchContext = "Use the following scraped web content to answer the user's query:\n\nUrl: $scrapeUrl\nContent:\n$safeMarkdown\n\nInstructions: Answer based on the website content. If the user asked a specific question, answer it. If the user only sent a link without a specific question, summarize what the website is, its main function, and important details. NEVER say you cannot open links or browse websites. You MUST use this extracted text to provide your answer."
+-                                } else {
+-                                    searchContext = "I tried to read $scrapeUrl but it returned empty. Explain to the user."
+-                                }
+-                            } catch (e: Exception) {
+-                                // If response is not JSON, just pass it as text
+-                                val safeMarkdown = if (fResponseStr.length > 10000) fResponseStr.substring(0, 10000) + "...\n[Content Truncated]" else fResponseStr
+-                                searchContext = "Use the following scraped web content to answer the user's query:\n\nUrl: $scrapeUrl\nContent:\n$safeMarkdown\n\nInstructions: Answer based on the website content."
+-                            }
+-                        } else {
+-                            val errCode = fResponse.code
+-                            val errMsg = fResponseStr?.take(200) ?: "Unknown error"
+-                            searchContext = "I tried to open $scrapeUrl, tapi gagal. HTTP $errCode - $errMsg"
+-                        }
+-                    } catch (e: Exception) {
+-                        searchContext = "I tried to open $scrapeUrl, tapi terjadi error: ${e.message}"
+-                    }
++                    _uiState.update { it.copy(isLoading = true, loadingText = "Membaca website...") }
++                    val browserResult = automaticBrowserRepository.readUrl(urlsInMessage.first())
++                    searchContext += browserResult.promptContext + "\n\n"
++                    searchLinks += browserResult.sourceLinks
+                     _uiState.update { it.copy(loadingText = null) }
+                 }
+@@ -533,6 +538,13 @@ class ChatViewModel(
+                     Kecuali aplikasi benar-benar mengirimkan hasil dari tool/API tersebut ke prompt ini.
+                     Jika tool/API tidak jalan, kamu harus bilang jujur: "Data realtime belum tersedia." atau "Search gagal, jadi saya tidak bisa memastikan."
+                     Jawaban default harus ringkas, jelas, dan langsung. Jangan terlalu panjang kecuali user meminta detail.
++
++                    ATURAN BROWSER OTOMATIS:
++                    - Jika terdapat WEB_BROWSER_CONTEXT, berarti aplikasi sudah menggunakan Browserless atau Firecrawl.
++                    - Jika status WEB_BROWSER_CONTEXT adalah berhasil, wajib jawab berdasarkan data tersebut.
++                    - Saat konteks browser tersedia, jangan mengatakan bahwa kamu tidak bisa membuka atau mengakses website.
++                    - Jika status WEB_BROWSER_CONTEXT adalah gagal, katakan bahwa browser aplikasi gagal mengambil data saat ini, bukan bahwa asisten tidak memiliki kemampuan browser.
++                    - Jangan mengarang isi situs atau data realtime yang gagal diperoleh.
+                 """.trimIndent()
+                 systemPrompt += "\n\n$antiHallucination"
+@@ -643,18 +655,6 @@ class ChatViewModel(
+                 val finalUserMessage = "$timeContext\n\nPERTANYAAN USER:\n$messageText"
+                 chatMessages.add(makeMessage("user", finalUserMessage, imageUri, true))
+-
+-                // Check for Firecrawl search trigger
+-                val searchQuery = getRealtimeSearchQuery(messageText)
+-                if (searchQuery != null && urlsInMessage.isEmpty()) {
+-                    if (searchQuery.isEmpty()) {
+-                        chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
+-                        _uiState.update { it.copy(isLoading = false) }
+-                        return@launch
+-                    }
+-                    
+-                    handleFirecrawlSearch(sessionId, searchQuery)
+-                    return@launch
+-                }
+                 
+                 if (attachmentSendFailedMsg != null) {
+                     _uiState.update {
+@@ -759,76 +759,6 @@ class ChatViewModel(
+         }
+     }
+-
+-    private suspend fun handleFirecrawlSearch(sessionId: Long, query: String) {
+-        _uiState.update { it.copy(isLoading = true, loadingText = "Searching with Vercel...") }
+-
+-        try {
+-            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+-
+-            val request = Request.Builder()
+-                .url("https://chat-ai-lutfula.vercel.app/api/search?q=$encodedQuery&mode=cari")
+-                .get()
+-                .build()
+-
+-            val response = okHttpClient.newCall(request).execute()
+-            val responseStr = response.body?.string()
+-
+-            if (response.isSuccessful && responseStr != null) {
+-                val jsonResponse = org.json.JSONObject(responseStr)
+-                val dataArray = jsonResponse.optJSONArray("data")
+-
+-                if (dataArray != null && dataArray.length() > 0) {
+-                    val sb = StringBuilder("Hasil pencarian realtime untuk: $query\n\n")
+-
+-                    for (i in 0 until minOf(5, dataArray.length())) {
+-                        val item = dataArray.optJSONObject(i)
+-                        if (item != null) {
+-                            val title = item.optString("title", "No Title")
+-                            val description = item.optString("description", "")
+-                            val url = item.optString("url", "")
+-
+-                            sb.append("${i + 1}. $title\n")
+-                            if (description.isNotBlank()) {
+-                                sb.append("   $description\n")
+-                            }
+-                            if (url.isNotBlank()) {
+-                                sb.append("   Sumber: $url\n")
+-                            }
+-                            sb.append("\n")
+-                        }
+-                    }
+-
+-                    chatRepository.insertMessage(
+-                        MessageEntity(
+-                            sessionId = sessionId,
+-                            role = "assistant",
+-                            content = sb.toString()
+-                        )
+-                    )
+-                } else {
+-                    chatRepository.insertMessage(
+-                        MessageEntity(
+-                            sessionId = sessionId,
+-                            role = "assistant",
+-                            content = "Tidak ditemukan hasil untuk: $query"
+-                        )
+-                    )
+-                }
+-            } else {
+-                chatRepository.insertMessage(
+-                    MessageEntity(
+-                        sessionId = sessionId,
+-                        role = "assistant",
+-                        content = "Vercel search gagal. HTTP ${response.code} - ${responseStr ?: "Error"}"
+-                    )
+-                )
+-            }
+-        } catch (e: Exception) {
+-            chatRepository.insertMessage(
+-                MessageEntity(
+-                    sessionId = sessionId,
+-                    role = "assistant",
+-                    content = "Vercel search gagal mengambil data realtime: ${e.message}"
+-                )
+-            )
+-        }
+-
+-        _uiState.update { it.copy(isLoading = false, loadingText = null) }
+-    }
+ 
+     private fun uriToBase64(uriStr: String?): String? {
