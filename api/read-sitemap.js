@@ -1,5 +1,5 @@
-const MAX_SITEMAPS = 8;
-const MAX_URLS = 500;
+const MAX_SITEMAPS = 64;
+const MAX_URLS = 5000;
 const MAX_RESPONSE_BYTES = 2_000_000;
 
 function isPrivateIpv4(host) {
@@ -61,11 +61,11 @@ function extractSitemapsFromRobots(text, origin) {
   return urls;
 }
 
-function extractLocs(xml) {
+function extractLocs(xml, limit = MAX_URLS) {
   const urls = [];
   const regex = /<loc\b[^>]*>([\s\S]*?)<\/loc>/gi;
   let match;
-  while ((match = regex.exec(String(xml || ''))) && urls.length < MAX_URLS) {
+  while ((match = regex.exec(String(xml || ''))) && urls.length < limit) {
     const value = match[1]
       .replace(/&amp;/gi, '&')
       .replace(/&lt;/gi, '<')
@@ -107,7 +107,11 @@ export default async function handler(req, res) {
 
   const origin = root.origin;
   const query = String(req.body?.query || '');
-  const maxUrls = Math.max(10, Math.min(MAX_URLS, Number.parseInt(String(req.body?.maxUrls || 200), 10) || 200));
+  const wholeSite = req.body?.wholeSite === true;
+  const requestedUrls = Number.parseInt(String(req.body?.maxUrls || (wholeSite ? MAX_URLS : 200)), 10) || 200;
+  const requestedSitemaps = Number.parseInt(String(req.body?.maxSitemaps || (wholeSite ? MAX_SITEMAPS : 8)), 10) || 8;
+  const maxUrls = Math.max(10, Math.min(MAX_URLS, requestedUrls));
+  const maxSitemaps = Math.max(1, Math.min(MAX_SITEMAPS, requestedSitemaps));
 
   try {
     const robotsUrl = new URL('/robots.txt', origin).toString();
@@ -118,30 +122,49 @@ export default async function handler(req, res) {
       if (!candidates.includes(candidate)) candidates.push(candidate);
     }
 
-    const queue = candidates.slice(0, MAX_SITEMAPS);
+    const queue = [];
+    const queuedSitemaps = new Set();
+    for (const candidate of candidates) {
+      if (queue.length >= maxSitemaps) break;
+      if (!queuedSitemaps.has(candidate)) {
+        queuedSitemaps.add(candidate);
+        queue.push(candidate);
+      }
+    }
+
     const visitedSitemaps = new Set();
     const pageUrls = new Set();
+    let sitemapLimitReached = false;
+    let urlLimitReached = false;
 
-    while (queue.length && visitedSitemaps.size < MAX_SITEMAPS && pageUrls.size < maxUrls) {
+    while (queue.length && visitedSitemaps.size < maxSitemaps && pageUrls.size < maxUrls) {
       const sitemapUrl = queue.shift();
       if (!sitemapUrl || visitedSitemaps.has(sitemapUrl)) continue;
       visitedSitemaps.add(sitemapUrl);
       const xml = await fetchText(sitemapUrl);
       if (!xml || !/<(?:urlset|sitemapindex)\b/i.test(xml)) continue;
-      const locs = extractLocs(xml);
+      const locs = extractLocs(xml, maxUrls);
 
       if (looksLikeSitemapIndex(xml)) {
         for (const loc of locs) {
           try {
             const parsed = await normalizePublicUrl(loc);
-            if (parsed.origin === origin && !visitedSitemaps.has(parsed.toString()) && queue.length < MAX_SITEMAPS) {
-              queue.push(parsed.toString());
+            const normalized = parsed.toString();
+            if (parsed.origin !== origin || visitedSitemaps.has(normalized) || queuedSitemaps.has(normalized)) continue;
+            if (queuedSitemaps.size >= maxSitemaps) {
+              sitemapLimitReached = true;
+              break;
             }
+            queuedSitemaps.add(normalized);
+            queue.push(normalized);
           } catch (_) {}
         }
       } else {
         for (const loc of locs) {
-          if (pageUrls.size >= maxUrls) break;
+          if (pageUrls.size >= maxUrls) {
+            urlLimitReached = true;
+            break;
+          }
           try {
             const parsed = await normalizePublicUrl(loc);
             if (parsed.origin === origin) pageUrls.add(parsed.toString());
@@ -150,10 +173,26 @@ export default async function handler(req, res) {
       }
     }
 
-    const urls = Array.from(pageUrls)
-      .map((url) => ({ url, score: scoreUrl(url, query) }))
-      .sort((a, b) => b.score - a.score || a.url.localeCompare(b.url))
-      .map((item) => item.url);
+    if (visitedSitemaps.size >= maxSitemaps && queue.length > 0) sitemapLimitReached = true;
+    if (pageUrls.size >= maxUrls) urlLimitReached = true;
+
+    const discovered = Array.from(pageUrls);
+    const urls = wholeSite
+      ? discovered.sort((a, b) => a.localeCompare(b))
+      : discovered
+          .map((url) => ({ url, score: scoreUrl(url, query) }))
+          .sort((a, b) => b.score - a.score || a.url.localeCompare(b.url))
+          .map((item) => item.url);
+
+    const coverage = {
+      wholeSite,
+      sitemapsDiscovered: queuedSitemaps.size,
+      sitemapsProcessed: visitedSitemaps.size,
+      urlsFound: urls.length,
+      sitemapLimitReached,
+      urlLimitReached,
+      complete: queue.length === 0 && !sitemapLimitReached && !urlLimitReached
+    };
 
     return res.status(200).json({
       success: urls.length > 0,
@@ -162,7 +201,8 @@ export default async function handler(req, res) {
       robotsFound: Boolean(robotsText),
       sitemaps: Array.from(visitedSitemaps),
       urls,
-      data: { origin, sitemaps: Array.from(visitedSitemaps), urls }
+      coverage,
+      data: { origin, sitemaps: Array.from(visitedSitemaps), urls, coverage }
     });
   } catch (error) {
     return res.status(500).json({
