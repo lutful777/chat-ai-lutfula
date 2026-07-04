@@ -24,18 +24,39 @@ The router never answers the user. It returns:
 
 Requests that ask for a complete list, all available models/products, full website contents, or deep verification should use `deep`.
 
+## Think Deeply whole-site mode
+
+Whole-site reading is deliberately separate from ordinary deep research. It activates only when both conditions are true:
+
+1. the Android chat mode is `THINK_DEEPLY`;
+2. the user supplies or references a URL and explicitly asks to read the whole website, all pages, or the entire public site.
+
+Normal and Think modes keep their existing behavior. Think Deeply questions that do not explicitly request a whole-site scan also keep the normal deep-research flow.
+
+When active, the Android client calls `/api/crawl-site` directly with `wholeSite=true`. The crawler:
+
+- reads robots and expanded sitemap indexes;
+- gathers up to 5,000 discoverable same-origin URLs;
+- follows internal links and pagination up to depth 12;
+- reads pages in small parallel batches;
+- removes duplicate and tracking URLs;
+- skips non-page assets;
+- returns a page inventory, detailed excerpts, failures, and a coverage report.
+
+The default whole-site request budget is 120 successfully read pages or about 105 seconds. The crawler reports `discovered`, `attempted`, `succeeded`, `failed`, `pending`, `duplicates`, `timedOut`, and `complete`. The assistant must not claim full coverage when failures, pending URLs, time limits, or discovery limits remain.
+
 ## Backend endpoints
 
 - `/api/search`: Firecrawl search with longer snippets and optional full-page enrichment.
 - `/api/read-url`: JavaScript-capable page reading with headings, links, tables, and structured data.
-- `/api/read-sitemap`: discovers public sitemap URLs and ranks pages relevant to a query.
-- `/api/crawl-site`: bounded, same-origin crawl with depth and page limits.
-- `/api/research`: orchestrates direct reading, crawling, query expansion, search, additional page reads, deduplication, and source ranking.
+- `/api/read-sitemap`: discovers public sitemap URLs; whole-site mode expands the sitemap and URL limits.
+- `/api/crawl-site`: bounded same-origin crawling; whole-site mode traverses all discoverable public page URLs within its declared budget.
+- `/api/research`: handles the existing quick, standard, and deep research flows.
 
 ## Safety and limits
 
 Website content is wrapped as `UNTRUSTED_WEB_DATA`. The model must treat it as evidence, not instructions. The backend rejects obvious private/local URLs, limits page counts and response sizes, avoids unsupported file types, and stops when the configured research budget is exhausted.
 
-The crawler is intended for publicly accessible pages. It does not bypass login, paywalls, CAPTCHA, access controls, or private APIs.
+The crawler is intended for publicly accessible pages. It does not bypass login, paywalls, CAPTCHA, access controls, or private APIs. “Complete” means every public page URL discovered within the sitemap/link graph and configured limits was attempted; it is not a claim that hidden or inaccessible pages exist nowhere.
 
 No SDK, Kotlin, Gradle, or Android plugin versions are changed by this feature.
