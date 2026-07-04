@@ -39,10 +39,14 @@ data class ChatRequestMessage(
 @JsonClass(generateAdapter = true)
 data class ChatRequest(
     val model: String,
-    val messages: List<ChatRequestMessage>,
+    var messages: List<ChatRequestMessage>,
     val stream: Boolean = false,
     val reasoning: ReasoningConfig? = null
-)
+) {
+    init {
+        messages = SafeWebContextResolver.enrich(messages)
+    }
+}
 
 @JsonClass(generateAdapter = true)
 data class ChatMessage(
