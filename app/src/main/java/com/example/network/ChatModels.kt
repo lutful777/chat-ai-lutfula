@@ -44,11 +44,33 @@ data class ChatRequest(
     val reasoning: ReasoningConfig? = null
 )
 
+private fun normalizeCopyablePromptMarker(value: String): String {
+    val markerToken = "__COPYABLE_PROMPT_MARKER__"
+    var mainPromptFound = false
+
+    val normalizedBlocks = Regex("(?im)^[\\t ]*Prompt\\s*:").replace(value) {
+        if (!mainPromptFound) {
+            mainPromptFound = true
+            markerToken
+        } else {
+            "\n\nCatatan:"
+        }
+    }
+
+    val normalizedInlineMentions = Regex("(?i)Prompt\\s*:")
+        .replace(normalizedBlocks, "Prompt :")
+
+    return normalizedInlineMentions.replace(markerToken, "Prompt:")
+}
+
 @JsonClass(generateAdapter = true)
 data class ChatMessage(
     val role: String,
+    @param:Json(name = "content") private val rawContent: String
+) {
     val content: String
-)
+        get() = normalizeCopyablePromptMarker(rawContent)
+}
 
 @JsonClass(generateAdapter = true)
 data class ChatResponse(
