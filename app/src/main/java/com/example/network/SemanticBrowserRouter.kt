@@ -13,6 +13,7 @@ internal data class SemanticBrowserDecision(
     val useBrowser: Boolean,
     val mode: String,
     val query: String,
+    val depth: String,
     val decidedByModel: Boolean
 )
 
@@ -32,13 +33,13 @@ internal object SemanticBrowserRouter {
 
         return try {
             val systemPrompt = """
-                Kamu adalah router alat browser untuk aplikasi AI.
-                Tugasmu hanya menentukan apakah pertanyaan pengguna membutuhkan internet/browser untuk dijawab dengan akurat.
+                Kamu adalah router alat browser dan perencana kedalaman riset untuk aplikasi AI.
+                Tugasmu hanya menentukan apakah pertanyaan pengguna membutuhkan internet, mode pencarian, kueri ringkas, dan kedalaman riset.
 
                 Gunakan browser jika:
-                - informasi dapat berubah setelah pengetahuan model, termasuk berita, kondisi hari ini, status layanan, pejabat/CEO saat ini, harga/paket/fitur terbaru, jadwal, skor, cuaca, versi, produk atau model yang sedang tersedia;
-                - pengguna meminta membuka, mencari, mengecek, atau membandingkan website/internet;
-                - jawaban bergantung pada isi situs, platform, halaman, tautan, atau katalog online;
+                - informasi dapat berubah setelah pengetahuan model, termasuk berita, status layanan, pejabat/CEO saat ini, harga/paket/fitur terbaru, jadwal, skor, cuaca, versi, produk atau model yang sedang tersedia;
+                - pengguna meminta membuka, mencari, mengecek, menelusuri, atau membandingkan website/internet;
+                - jawaban bergantung pada isi situs, platform, halaman, tautan, katalog, dokumentasi, sitemap, atau API online;
                 - pengguna menanyakan perkembangan, alasan, sentimen, atau kejadian terbaru.
 
                 Jangan gunakan browser jika:
@@ -49,13 +50,18 @@ internal object SemanticBrowserRouter {
                 Jika nilai tersebut true dan data khusus sudah cukup untuk pertanyaan langsung, pilih use_browser=false.
                 Namun tetap pilih use_browser=true bila pengguna meminta berita, alasan, sentimen, perkembangan, atau konteks online tambahan.
 
+                Pilih depth:
+                - quick: satu pencarian cukup; pertanyaan sederhana atau fakta tunggal.
+                - standard: perlu membuka beberapa hasil atau menelusuri sebuah website secara terbatas.
+                - deep: pengguna meminta lengkap/seluruh/semua, daftar model/produk yang tersedia, riset mendalam, verifikasi silang, atau isi situs tidak mungkin cukup dari satu halaman.
+
                 Kembalikan JSON valid saja tanpa markdown:
-                {"use_browser":true|false,"mode":"search"|"news","query":"kueri pencarian ringkas"}
+                {"use_browser":true|false,"mode":"search"|"news","query":"kueri pencarian ringkas","depth":"quick"|"standard"|"deep"}
 
                 Aturan mode:
                 - news untuk berita, perkembangan terbaru, sentimen, kejadian hari ini, atau alasan pergerakan terbaru.
                 - search untuk website, daftar produk/model/fitur, status, pejabat, harga/paket, dokumentasi, dan informasi online lainnya.
-                Jika use_browser=false, query boleh kosong.
+                Jika use_browser=false, query boleh kosong dan depth gunakan quick.
             """.trimIndent()
 
             val requestJson = JSONObject()
@@ -120,11 +126,18 @@ internal object SemanticBrowserRouter {
                     .trim()
                     .ifBlank { question }
                     .take(500)
+                val rawDepth = decisionJson.optString("depth", "standard")
+                    .lowercase(Locale.ROOT)
+                val depth = when (rawDepth) {
+                    "quick", "standard", "deep" -> rawDepth
+                    else -> "standard"
+                }
 
                 SemanticBrowserDecision(
                     useBrowser = useBrowser,
                     mode = mode,
                     query = query,
+                    depth = if (useBrowser) depth else "quick",
                     decidedByModel = true
                 )
             }
