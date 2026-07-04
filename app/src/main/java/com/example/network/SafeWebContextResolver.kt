@@ -50,6 +50,7 @@ internal object SafeWebContextResolver {
         val rawQuestion = latestUserText
             .substringAfterLast("PERTANYAAN USER:", latestUserText)
             .trim()
+        val explicitBrowserCommand = hasExplicitBrowserCommand(rawQuestion)
         val question = removeBrowserCommand(rawQuestion)
         if (question.isBlank()) return messages
 
@@ -66,16 +67,43 @@ internal object SafeWebContextResolver {
             systemText.contains("Holiday API Result", ignoreCase = true) ||
             systemText.contains("Realtime Price API Data", ignoreCase = true)
 
-        val browserResult = when {
-            referencedUrl != null -> browserRepository.readUrl(referencedUrl)
-            !hasDedicatedRealtimeContext && shouldUseAutomaticBrowser(question) -> {
-                browserRepository.search(
-                    query = question,
-                    mode = resolveAutomaticBrowserMode(rawQuestion)
-                )
-            }
-            else -> null
-        } ?: return messages
+        val semanticDecision = if (!explicitBrowserCommand && referencedUrl == null) {
+            SemanticBrowserRouter.decide(
+                question = question,
+                hasDedicatedRealtimeContext = hasDedicatedRealtimeContext
+            )
+        } else {
+            null
+        }
+
+        val fallbackUseBrowser = shouldUseAutomaticBrowser(question)
+        val shouldBrowse = when {
+            referencedUrl != null -> true
+            explicitBrowserCommand -> true
+            semanticDecision != null -> semanticDecision.useBrowser
+            else -> fallbackUseBrowser
+        }
+
+        if (!shouldBrowse) return messages
+
+        val searchMode = when {
+            explicitBrowserCommand -> resolveAutomaticBrowserMode(rawQuestion)
+            semanticDecision != null -> semanticDecision.mode
+            else -> resolveAutomaticBrowserMode(rawQuestion)
+        }
+        val searchQuery = semanticDecision
+            ?.query
+            ?.takeIf { it.isNotBlank() }
+            ?: question
+
+        val browserResult = if (referencedUrl != null) {
+            browserRepository.readUrl(referencedUrl)
+        } else {
+            browserRepository.search(
+                query = searchQuery,
+                mode = searchMode
+            )
+        }
 
         val dataBlock = buildString {
             appendLine("UNTRUSTED_WEB_DATA_START")
@@ -130,6 +158,13 @@ internal object SafeWebContextResolver {
         }
 
         return updated
+    }
+
+    private fun hasExplicitBrowserCommand(text: String): Boolean {
+        return Regex(
+            """^\s*#(?:browser|cari|berita)\b""",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(text)
     }
 
     private fun removeBrowserCommand(text: String): String {
