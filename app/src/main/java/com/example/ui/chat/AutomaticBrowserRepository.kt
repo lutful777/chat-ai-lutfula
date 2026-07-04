@@ -19,13 +19,15 @@ internal class AutomaticBrowserRepository(
         question: String,
         referencedUrl: String?,
         mode: String,
-        depth: String
+        depth: String,
+        wholeSite: Boolean = false
     ): AutomaticBrowserResult {
         return try {
             val payload = JSONObject()
                 .put("question", question)
                 .put("mode", mode)
                 .put("depth", normalizeDepth(depth))
+                .put("wholeSite", wholeSite)
             if (!referencedUrl.isNullOrBlank()) payload.put("url", referencedUrl)
 
             val request = Request.Builder()
@@ -48,12 +50,30 @@ internal class AutomaticBrowserRepository(
                     return failure("Riset web tidak menghasilkan bukti yang dapat digunakan.")
                 }
 
+                val coverage = data?.optJSONObject("coverage") ?: root.optJSONObject("coverage")
+                val coverageSummary = buildString {
+                    if (wholeSite) {
+                        appendLine("Mode seluruh website publik: aktif")
+                        if (coverage != null) {
+                            appendLine("URL ditemukan: ${coverage.optInt("discovered", 0)}")
+                            appendLine("URL dicoba: ${coverage.optInt("attempted", 0)}")
+                            appendLine("Berhasil dibaca: ${coverage.optInt("succeeded", 0)}")
+                            appendLine("Gagal dibaca: ${coverage.optInt("failed", 0)}")
+                            appendLine("Masih tersisa: ${coverage.optInt("pending", 0)}")
+                            appendLine("Duplikat dihapus: ${coverage.optInt("duplicates", 0)}")
+                            appendLine("Batas waktu tercapai: ${coverage.optBoolean("timedOut", false)}")
+                            appendLine("Pemindaian selesai: ${coverage.optBoolean("complete", false)}")
+                        }
+                        appendLine()
+                    }
+                }
+
                 val sources = data?.optJSONArray("sources") ?: root.optJSONArray("sources")
                 val sourceSummary = buildString {
                     if (sources != null && sources.length() > 0) {
                         appendLine()
                         appendLine("Daftar sumber riset:")
-                        for (index in 0 until minOf(20, sources.length())) {
+                        for (index in 0 until minOf(40, sources.length())) {
                             val source = sources.optJSONObject(index) ?: continue
                             val title = source.optString("title", "Sumber ${index + 1}")
                             val url = source.optString("url", "")
@@ -66,12 +86,15 @@ internal class AutomaticBrowserRepository(
                     context = buildString {
                         appendLine("Status browser: berhasil")
                         appendLine("Mode riset: ${normalizeDepth(depth)}")
-                        appendLine()
-                        appendLine(context.take(MAX_RESEARCH_CONTEXT))
+                        append(coverageSummary)
+                        appendLine(context.take(if (wholeSite) MAX_WHOLE_SITE_CONTEXT else MAX_RESEARCH_CONTEXT))
                         append(sourceSummary)
                         appendLine()
                         appendLine("Gunakan bukti web ini untuk menjawab pertanyaan pengguna.")
                         appendLine("Bandingkan sumber dan jangan mengarang informasi yang tidak didukung bukti.")
+                        if (wholeSite) {
+                            appendLine("Jangan mengklaim seluruh website berhasil dibaca jika laporan cakupan menunjukkan gagal, tersisa, timeout, atau complete=false.")
+                        }
                     },
                     success = true
                 )
@@ -194,6 +217,7 @@ internal class AutomaticBrowserRepository(
     private companion object {
         const val BASE_URL = "https://chat-ai-lutfula.vercel.app"
         const val MAX_RESEARCH_CONTEXT = 60000
+        const val MAX_WHOLE_SITE_CONTEXT = 100000
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
