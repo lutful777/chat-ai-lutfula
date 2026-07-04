@@ -639,45 +639,52 @@ data class MessageBlock(
     val text: String
 )
 
-fun parseMessageContent(content: String): List<MessageBlock> {
-    val blocks = mutableListOf<MessageBlock>()
-    
-    // Split by "Prompt:"
-    val parts = content.split(Regex("(?i)Prompt:"))
-    
-    if (parts.size <= 1) {
-        blocks.add(MessageBlock(BlockType.TEXT, content))
-        return blocks
+fun parseMessageContent(content: String, isUser: Boolean): List<MessageBlock> {
+    if (isUser || !content.contains("Prompt:")) {
+        return listOf(MessageBlock(BlockType.TEXT, content))
     }
+
+    val blocks = mutableListOf<MessageBlock>()
+    val lines = content.lines()
     
-    parts.forEachIndexed { index, part ->
-        if (index == 0) {
-            if (part.isNotBlank()) {
-                blocks.add(MessageBlock(BlockType.TEXT, part.trim()))
+    var inPrompt = false
+    var foundMainPrompt = false
+    var currentText = StringBuilder()
+    var currentPrompt = StringBuilder()
+
+    for (line in lines) {
+        // We only trigger if the line is exactly "Prompt:" and we haven't found a main prompt yet.
+        if (line.trim().equals("Prompt:", ignoreCase = true) && !foundMainPrompt) {
+            if (currentText.isNotBlank()) {
+                blocks.add(MessageBlock(BlockType.TEXT, currentText.toString().trim()))
+                currentText.clear()
+            }
+            inPrompt = true
+            foundMainPrompt = true
+            continue
+        }
+
+        if (inPrompt) {
+            if (line.isBlank() && currentPrompt.isNotBlank()) {
+                // End of prompt block on first blank line
+                blocks.add(MessageBlock(BlockType.PROMPT_MAIN, currentPrompt.toString().trim()))
+                currentPrompt.clear()
+                inPrompt = false
+            } else {
+                currentPrompt.append(line).append("\n")
             }
         } else {
-            // This part started with "Prompt:"
-            // Split this part further to separate the prompt from following text
-            val subParts = part.split(Regex("(?i)\n\n(?=(Kalau mau|Jika ingin|Alternative|Versi|Untuk|Catatan|Note|Berikut))"))
-            
-            // The first subPart is the actual prompt text
-            val promptText = subParts[0].trim()
-            if (promptText.isNotBlank()) {
-                // First prompt found in the message is considered MAIN, others ALT
-                val type = if (index == 1) BlockType.PROMPT_MAIN else BlockType.PROMPT_ALT
-                blocks.add(MessageBlock(type, promptText))
-            }
-            
-            // The remaining subParts are regular text
-            for (i in 1 until subParts.size) {
-                val textRest = subParts[i].trim()
-                if (textRest.isNotBlank()) {
-                    blocks.add(MessageBlock(BlockType.TEXT, textRest))
-                }
-            }
+            currentText.append(line).append("\n")
         }
     }
-    
+
+    if (inPrompt && currentPrompt.isNotBlank()) {
+        blocks.add(MessageBlock(BlockType.PROMPT_MAIN, currentPrompt.toString().trim()))
+    }
+    if (currentText.isNotBlank()) {
+        blocks.add(MessageBlock(BlockType.TEXT, currentText.toString().trim()))
+    }
+
     return blocks
 }
 
@@ -729,30 +736,7 @@ fun MainPromptCard(promptText: String) {
     }
 }
 
-@Composable
-fun AltPromptCard(promptText: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .background(Color(0xFF1E1E1E), RoundedCornerShape(8.dp))
-            .border(1.dp, Color.DarkGray, RoundedCornerShape(8.dp))
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "Alternatif / Opsi Tambahan",
-                color = Color.LightGray,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-            Text(
-                text = promptText,
-                color = Color.LightGray,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-}
+
 
 @Composable
 fun MessageBubble(message: UiMessage) {
@@ -817,17 +801,14 @@ fun MessageBubble(message: UiMessage) {
             }
             
             // Parsing logic using parseMessageContent
-            val blocks = parseMessageContent(message.content)
+            val blocks = parseMessageContent(message.content, isUser)
             blocks.forEach { block ->
                 when (block.type) {
-                    BlockType.TEXT -> {
+                    BlockType.TEXT, BlockType.PROMPT_ALT -> {
                         MessageContent(content = block.text, isUser = isUser)
                     }
                     BlockType.PROMPT_MAIN -> {
                         MainPromptCard(promptText = block.text)
-                    }
-                    BlockType.PROMPT_ALT -> {
-                        AltPromptCard(promptText = block.text)
                     }
                 }
             }
