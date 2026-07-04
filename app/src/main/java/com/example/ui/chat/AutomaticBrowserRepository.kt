@@ -23,15 +23,33 @@ internal class AutomaticBrowserRepository(
         wholeSite: Boolean = false
     ): AutomaticBrowserResult {
         return try {
-            val payload = JSONObject()
-                .put("question", question)
-                .put("mode", mode)
-                .put("depth", normalizeDepth(depth))
-                .put("wholeSite", wholeSite)
-            if (!referencedUrl.isNullOrBlank()) payload.put("url", referencedUrl)
+            val payload = if (wholeSite) {
+                JSONObject()
+                    .put("url", referencedUrl)
+                    .put("query", question)
+                    .put("wholeSite", true)
+                    .put("maxPages", 120)
+                    .put("maxDepth", 12)
+                    .put("timeBudgetMs", 105000)
+            } else {
+                JSONObject()
+                    .put("question", question)
+                    .put("mode", mode)
+                    .put("depth", normalizeDepth(depth))
+                    .put("wholeSite", false)
+                    .also { body ->
+                        if (!referencedUrl.isNullOrBlank()) body.put("url", referencedUrl)
+                    }
+            }
+
+            val endpoint = if (wholeSite) {
+                "$BASE_URL/api/crawl-site"
+            } else {
+                "$BASE_URL/api/research"
+            }
 
             val request = Request.Builder()
-                .url("$BASE_URL/api/research")
+                .url(endpoint)
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build()
 
@@ -85,7 +103,7 @@ internal class AutomaticBrowserRepository(
                 AutomaticBrowserResult(
                     context = buildString {
                         appendLine("Status browser: berhasil")
-                        appendLine("Mode riset: ${normalizeDepth(depth)}")
+                        appendLine("Mode riset: ${if (wholeSite) "whole-site" else normalizeDepth(depth)}")
                         append(coverageSummary)
                         appendLine(context.take(if (wholeSite) MAX_WHOLE_SITE_CONTEXT else MAX_RESEARCH_CONTEXT))
                         append(sourceSummary)
