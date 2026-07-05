@@ -27,9 +27,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class ScreenFrameProcessor(
     private val engine: ChessEngine,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     framesPerSecond: Int = 1,
-    private val minimumConfidence: Float = 0.15f,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val minimumConfidence: Float = 0.15f
 ) {
     private val scope = CoroutineScope(dispatcher + SupervisorJob())
     private val detector = ChessBoardDetector()
