@@ -28,11 +28,11 @@ fun ChessAssistantScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    
+
     val projectionManager = remember {
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
-    
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -47,9 +47,6 @@ fun ChessAssistantScreen(
             } else {
                 context.startService(intent)
             }
-            viewModel.onPermissionGranted()
-            // Simulation
-            viewModel.simulatePipeline()
         } else {
             viewModel.onPermissionDenied()
         }
@@ -61,12 +58,12 @@ fun ChessAssistantScreen(
                 title = { Text("Chess Screen Assistant") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
                     }
                 },
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                        Icon(Icons.Filled.Settings, contentDescription = "Pengaturan")
                     }
                 }
             )
@@ -80,41 +77,54 @@ fun ChessAssistantScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(text = "Status:", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Status", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             when (val currentState = state) {
-                is ChessAssistantState.Idle -> Text("Menunggu dimulai")
-                is ChessAssistantState.RequestingPermission -> Text("Meminta izin layar...")
-                is ChessAssistantState.CapturingScreen -> Text("Screen Capture Aktif")
-                is ChessAssistantState.SearchingBoard -> {
+                ChessAssistantState.Idle -> Text("Menunggu dimulai")
+                ChessAssistantState.RequestingPermission -> Text("Meminta izin layar…")
+                ChessAssistantState.CapturingScreen -> Text("Pembacaan layar aktif")
+                ChessAssistantState.SearchingBoard -> {
                     CircularProgressIndicator()
-                    Text("Mencari papan...")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Mencari papan catur…")
                 }
-                is ChessAssistantState.RecognizingPosition -> {
+                ChessAssistantState.RecognizingPosition -> {
                     CircularProgressIndicator()
-                    Text("Mengenali bidak...")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Membaca posisi papan…")
                 }
-                is ChessAssistantState.Analyzing -> {
+                ChessAssistantState.Analyzing -> {
                     CircularProgressIndicator()
-                    Text("Menganalisis...")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Menganalisis posisi…")
                 }
                 is ChessAssistantState.Result -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Best Move: \${currentState.bestMove}", style = MaterialTheme.typography.titleLarge)
-                            Text("Eval: \${currentState.evaluation}")
-                            Text("FEN: \${currentState.fen}", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                text = "Langkah terbaik: ${currentState.bestMove}",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Text("Evaluasi: ${currentState.evaluation}")
+                            if (currentState.depth > 0) Text("Kedalaman: ${currentState.depth}")
+                            Text(
+                                text = "FEN: ${currentState.fen}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }
                 is ChessAssistantState.Error -> {
-                    Text("Error: \${currentState.message}", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        text = currentState.message,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(32.dp))
-            
+
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Button(
                     onClick = {
@@ -125,14 +135,14 @@ fun ChessAssistantScreen(
                 ) {
                     Text("Start")
                 }
-                
+
                 Button(
                     onClick = {
-                        viewModel.stopCapture()
                         val intent = Intent(context, ScreenCaptureService::class.java).apply {
                             action = ScreenCaptureService.ACTION_STOP
                         }
                         context.startService(intent)
+                        viewModel.stopCapture()
                     },
                     enabled = state != ChessAssistantState.Idle
                 ) {
