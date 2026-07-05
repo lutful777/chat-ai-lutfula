@@ -1,7 +1,8 @@
 package com.example.chess.engine
 
 import com.example.chess.domain.ChessAnalysisResult
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -12,12 +13,10 @@ class StockfishEngine(private val executablePath: String) : ChessEngine {
     private var process: Process? = null
     private var reader: BufferedReader? = null
     private var writer: BufferedWriter? = null
-    
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var isReady = AtomicBoolean(false)
-    private var crashed = AtomicBoolean(false)
-    
-    private var currentEval = ""
+    private val ready = AtomicBoolean(false)
+    private val crashed = AtomicBoolean(false)
+
+    private var currentEvaluation = ""
     private var currentDepth = 0
 
     init {
@@ -25,116 +24,122 @@ class StockfishEngine(private val executablePath: String) : ChessEngine {
     }
 
     private fun startProcess(): Boolean {
-        try {
-            process = ProcessBuilder(executablePath).start()
-            reader = BufferedReader(InputStreamReader(process?.inputStream))
-            writer = BufferedWriter(OutputStreamWriter(process?.outputStream))
-            
+        closeProcess()
+        return try {
+            process = ProcessBuilder(executablePath)
+                .redirectErrorStream(true)
+                .start()
+            reader = BufferedReader(InputStreamReader(process!!.inputStream))
+            writer = BufferedWriter(OutputStreamWriter(process!!.outputStream))
+
             sendCommand("uci")
-            var line: String?
-            while (reader?.readLine().also { line = it } != null) {
-                if (line == "uciok") break
-            }
-            
-            sendCommand("isready")
-            while (reader?.readLine().also { line = it } != null) {
-                if (line == "readyok") break
-            }
-            
+            if (!waitForExactLine("uciok")) error("Stockfish did not complete UCI handshake")
+
             sendCommand("setoption name Threads value 1")
             sendCommand("setoption name Hash value 64")
             sendCommand("setoption name MultiPV value 1")
             sendCommand("setoption name Ponder value false")
             sendCommand("ucinewgame")
-            
-            isReady.set(true)
+            sendCommand("isready")
+            if (!waitForExactLine("readyok")) error("Stockfish did not become ready")
+
+            ready.set(true)
             crashed.set(false)
-            return true
-        } catch (e: Exception) {
-            e.printStackTrace()
+            true
+        } catch (_: Exception) {
+            ready.set(false)
             crashed.set(true)
-            return false
+            closeProcess()
+            false
         }
-    }
-    
-    fun applySettings(settings: EngineSettings) {
-        sendCommand("setoption name Threads value \${settings.threads}")
-        sendCommand("setoption name Hash value \${settings.hashMb}")
-        sendCommand("setoption name MultiPV value \${settings.multiPv}")
     }
 
-    override suspend fun analyze(fen: String, depth: Int): ChessAnalysisResult = withContext(Dispatchers.IO) {
-        // We use movetime, not depth, so we'll expect movetime in depth parameter here or via settings.
-        // For compatibility with interface, we will treat 'depth' as movetime if it's large (e.g. > 100), 
-        // else we just use a default movetime or we pass movetime instead.
-        val moveTime = if (depth > 100) depth else 800
-        
-        if (crashed.get() || process == null) {
-            val restarted = startProcess()
-            if (!restarted) return@withContext ChessAnalysisResult("", null, "Error", 0)
-        }
-        
-        sendCommand("position fen \$fen")
-        sendCommand("go movetime \$moveTime")
-        
-        var bestMove = ""
-        var ponder: String? = null
-        currentEval = ""
-        currentDepth = 0
-        var pv = ""
-        
-        try {
-            var line: String?
-            while (reader?.readLine().also { line = it } != null) {
-                val currentLine = line ?: ""
-                
-                val info = UciParser.parseInfo(currentLine)
-                if (info != null) {
-                    if (info.evaluation.isNotEmpty()) currentEval = info.evaluation
-                    if (info.depth > 0) currentDepth = info.depth
-                    if (info.principalVariation.isNotEmpty()) pv = info.principalVariation
-                }
-                
-                val moveResult = UciParser.parseBestMove(currentLine)
-                if (moveResult != null) {
-                    bestMove = moveResult.first
-                    ponder = moveResult.second
-                    break
+    override suspend fun analyze(fen: String, depth: Int): ChessAnalysisResult =
+        withContext(Dispatchers.IO) {
+            if (crashed.get() || !ready.get() || process?.isAlive != true) {
+                if (!startProcess()) {
+                    return@withContext ChessAnalysisResult("", null, "Error", 0)
                 }
             }
-        } catch (e: Exception) {
-            crashed.set(true)
+
+            val moveTime = if (depth >= 100) depth else 3000
+            currentEvaluation = ""
+            currentDepth = 0
+
+            sendCommand("position fen $fen")
+            sendCommand("go movetime $moveTime")
+
+            var bestMove = ""
+            var ponder: String? = null
+
+            try {
+                while (true) {
+                    val line = reader?.readLine() ?: break
+                    UciParser.parseInfo(line)?.let { info ->
+                        if (info.evaluation.isNotEmpty()) currentEvaluation = info.evaluation
+                        if (info.depth > 0) currentDepth = info.depth
+                    }
+                    UciParser.parseBestMove(line)?.let { result ->
+                        bestMove = result.first
+                        ponder = result.second
+                        return@let
+                    }
+                    if (bestMove.isNotEmpty()) break
+                }
+            } catch (_: Exception) {
+                crashed.set(true)
+            }
+
+            ChessAnalysisResult(
+                bestMove = bestMove,
+                ponderMove = ponder,
+                evaluation = currentEvaluation.ifBlank { "0.00" },
+                depth = currentDepth
+            )
         }
-        
-        ChessAnalysisResult(bestMove, ponder, currentEval, currentDepth)
-    }
 
     override fun stopAnalysis() {
-        sendCommand("stop")
+        if (ready.get()) sendCommand("stop")
     }
 
     override fun close() {
-        sendCommand("quit")
-        try {
-            process?.waitFor()
-        } catch (e: Exception) {}
-        
-        try {
-            reader?.close()
-            writer?.close()
-        } catch (e: Exception) {}
-        
-        process = null
-        isReady.set(false)
-        scope.cancel()
+        if (ready.get()) sendCommand("quit")
+        closeProcess()
+    }
+
+    private fun waitForExactLine(expected: String): Boolean {
+        while (true) {
+            val line = reader?.readLine() ?: return false
+            if (line.trim() == expected) return true
+        }
     }
 
     private fun sendCommand(command: String) {
         try {
-            writer?.write(command + "\n")
+            writer?.write(command)
+            writer?.newLine()
             writer?.flush()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             crashed.set(true)
         }
+    }
+
+    private fun closeProcess() {
+        try {
+            reader?.close()
+        } catch (_: Exception) {
+        }
+        try {
+            writer?.close()
+        } catch (_: Exception) {
+        }
+        try {
+            process?.destroy()
+        } catch (_: Exception) {
+        }
+        reader = null
+        writer = null
+        process = null
+        ready.set(false)
     }
 }
