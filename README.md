@@ -8,12 +8,13 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 
 1. Buka menu samping dan pilih **Chess Assistant**.
 2. Tekan **Mulai Membaca Layar**.
-3. Setujui dialog perekaman layar Android.
-4. Pada Android yang mendukung berbagi satu aplikasi, pilih aplikasi catur yang ingin dibaca.
-5. Buka papan catur pada posisi awal standar dan tampilkan seluruh papan.
-6. Tunggu notifikasi menampilkan langkah terbaik.
-7. Mainkan langkah secara manual; rekomendasi akan diperbarui saat posisi berubah.
-8. Tekan **Stop** dari aplikasi atau notifikasi setelah selesai.
+3. Berikan izin **Tampil di atas aplikasi lain** agar panah dapat muncul.
+4. Setujui dialog perekaman layar Android.
+5. Pada Android yang mendukung berbagi satu aplikasi, pilih aplikasi catur yang ingin dibaca.
+6. Buka papan catur pada posisi awal standar dan tampilkan seluruh papan.
+7. Tunggu panah dan kartu petunjuk muncul di atas papan.
+8. Mainkan langkah secara manual; rekomendasi akan diperbarui saat posisi berubah.
+9. Tekan **Stop** dari aplikasi atau notifikasi setelah selesai.
 
 ### Cara kerja
 
@@ -23,7 +24,16 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 - Identitas bidak dipertahankan dari riwayat langkah sejak posisi awal.
 - Posisi diubah menjadi FEN.
 - Mesin catur Kotlin lokal menghitung saran langkah dengan pencarian alpha-beta.
+- Koordinat langkah dipetakan ke posisi papan lalu digambar sebagai panah overlay.
 - Kedalaman efektif mesin lokal dibatasi hingga 3 agar penggunaan CPU tetap aman.
+
+### Petunjuk visual
+
+- Lingkaran tipis menandai petak asal.
+- Lingkaran terisi menandai petak tujuan.
+- Panah menunjukkan arah gerakan.
+- Kartu kecil menampilkan format seperti **C2 → C4**.
+- Overlay tidak menerima sentuhan dan tidak menggerakkan bidak secara otomatis.
 
 ### Privasi
 
@@ -39,8 +49,8 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 - Papan harus terlihat penuh, lurus, dan tidak tertutup menu atau animasi.
 - Tema papan harus mempunyai dua warna petak yang cukup berbeda.
 - Orientasi papan sebaiknya tidak berubah selama satu sesi.
+- Posisi panah bergantung pada ketepatan deteksi batas papan.
 - Mesin lokal bawaan merupakan mesin ringan, bukan pengganti Stockfish.
-- Overlay panah di atas aplikasi lain belum tersedia; rekomendasi tampil melalui notifikasi dan halaman Chess Assistant.
 
 ### Pengujian
 
