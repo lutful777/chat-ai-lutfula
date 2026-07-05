@@ -151,7 +151,7 @@ class ScreenFrameProcessor(
                 onBestMove(
                     result.bestMove,
                     Rect(detection.bounds),
-                    detection.orientation
+                    tracking.orientation
                 )
             }
         }
