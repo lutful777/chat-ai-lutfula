@@ -38,8 +38,24 @@ function updateInfo(line, info) {
   if (pv) info.principalVariation = pv[1].trim().split(/\s+/).slice(0, 8);
 }
 
+function loadEngine() {
+  return new Promise((resolve, reject) => {
+    let engine;
+    const timer = setTimeout(() => reject(new Error("Stockfish startup timeout")), TIMEOUT_MS);
+    try {
+      engine = stockfishFactory("lite-single", () => {
+        clearTimeout(timer);
+        resolve(engine);
+      });
+    } catch (error) {
+      clearTimeout(timer);
+      reject(error);
+    }
+  });
+}
+
 async function analyze(fen) {
-  const engine = await stockfishFactory("lite-single");
+  const engine = await loadEngine();
   const info = {
     evaluation: null,
     mate: null,
