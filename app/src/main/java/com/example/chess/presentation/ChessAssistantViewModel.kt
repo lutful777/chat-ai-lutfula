@@ -17,6 +17,14 @@ class ChessAssistantViewModel : ViewModel() {
         )
     }
 
+    fun onOverlayPermissionDenied() {
+        ChessAssistantController.update(
+            ChessAssistantState.Error(
+                "Izin tampil di atas aplikasi lain diperlukan agar panah dapat terlihat."
+            )
+        )
+    }
+
     fun stopCapture() {
         ChessAssistantController.reset()
     }
