@@ -6,7 +6,7 @@ import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
-import android.provider.Settings
+import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -66,7 +66,7 @@ fun ChessAssistantScreen(
     ) {
         if (continueAfterOverlayPermission) {
             continueAfterOverlayPermission = false
-            if (Settings.canDrawOverlays(context)) {
+            if (AndroidSettings.canDrawOverlays(context)) {
                 launchCapturePermission()
             } else {
                 viewModel.onOverlayPermissionDenied()
@@ -76,10 +76,10 @@ fun ChessAssistantScreen(
 
     fun startWithRequiredPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            !Settings.canDrawOverlays(context)) {
+            !AndroidSettings.canDrawOverlays(context)) {
             continueAfterOverlayPermission = true
             val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:${context.packageName}")
             )
             overlayPermission.launch(intent)
