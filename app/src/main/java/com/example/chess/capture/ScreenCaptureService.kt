@@ -19,6 +19,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.chess.domain.ChessAssistantState
+import com.example.chess.overlay.ChessOverlayManager
 import com.example.chess.presentation.ChessAssistantController
 
 class ScreenCaptureService : Service() {
@@ -42,6 +43,7 @@ class ScreenCaptureService : Service() {
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
     private var frameProcessor: ScreenFrameProcessor? = null
+    private var overlayManager: ChessOverlayManager? = null
     private var cleaningUp = false
 
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -53,6 +55,7 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        overlayManager = ChessOverlayManager(this)
         captureThread = HandlerThread("ChessScreenCapture").also { it.start() }
         captureHandler = Handler(captureThread!!.looper)
     }
@@ -94,8 +97,9 @@ class ScreenCaptureService : Service() {
 
         mediaProjection = projection
         projection.registerCallback(projectionCallback, captureHandler)
-        frameProcessor = ScreenFrameProcessor { move ->
+        frameProcessor = ScreenFrameProcessor { move, bounds, orientation ->
             updateNotification("Langkah terbaik: $move")
+            overlayManager?.showMove(move, bounds, orientation)
         }
 
         val metrics = resources.displayMetrics
@@ -148,6 +152,7 @@ class ScreenCaptureService : Service() {
         imageReader?.setOnImageAvailableListener(null, null)
         frameProcessor?.close()
         frameProcessor = null
+        overlayManager?.hide()
 
         virtualDisplay?.release()
         virtualDisplay = null
@@ -234,6 +239,8 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         stopCapture(resetUi = true, stopService = false)
+        overlayManager?.hide()
+        overlayManager = null
         captureThread?.quitSafely()
         captureThread = null
         captureHandler = null
