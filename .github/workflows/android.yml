@@ -34,11 +34,11 @@ jobs:
     - name: Remove Corrupt Gradle Wrapper
       run: rm -f gradle/wrapper/gradle-wrapper.jar
 
-    - name: Build with Gradle
+    - name: Test and build with Gradle
       shell: bash
       run: |
         set -o pipefail
-        gradle clean assembleDebug --stacktrace --no-configuration-cache --no-daemon 2>&1 | tee build.log
+        gradle clean testDebugUnitTest assembleDebug --stacktrace --no-configuration-cache --no-daemon 2>&1 | tee build.log
 
     - name: Upload Build Log
       if: always()
