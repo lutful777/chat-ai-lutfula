@@ -6,20 +6,27 @@ on:
       - fix/stockfish-vercel-3000ms-v2
   workflow_dispatch:
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: temurin
           cache: gradle
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
       - name: Decode or generate debug keystore
         run: |
           if [ ! -f debug.keystore.base64 ]; then
@@ -27,22 +34,51 @@ jobs:
           else
             python3 -c "import base64; open('debug.keystore', 'wb').write(base64.b64decode(open('debug.keystore.base64', 'r').read()))"
           fi
+
       - name: Remove corrupt Gradle wrapper jar
         run: rm -f gradle/wrapper/gradle-wrapper.jar
+
       - name: Test and build with Gradle
+        id: android_build
+        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
           gradle clean testDebugUnitTest assembleDebug --stacktrace --no-configuration-cache --no-daemon 2>&1 | tee build.log
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-arrow-build-log
           path: build.log
+
       - name: Upload debug APK
+        if: steps.android_build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-arrow
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish commit status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const passed = '${{ steps.android_build.outcome }}' === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: passed ? 'success' : 'failure',
+              context: 'Android Arrow CI',
+              description: passed
+                ? 'Unit tests and debug APK build passed'
+                : 'Unit tests or debug APK build failed',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
+      - name: Fail when Android build failed
+        if: steps.android_build.outcome != 'success'
+        run: exit 1
