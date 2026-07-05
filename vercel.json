@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "functions": {
+    "api/chess/analyze.js": {
+      "maxDuration": 15,
+      "includeFiles": "node_modules/stockfish.wasm/**"
+    }
+  }
+}
