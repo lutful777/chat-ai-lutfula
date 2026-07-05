@@ -3,6 +3,7 @@ package com.example.chess.data
 import android.content.Context
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.chess.engine.ChessApiConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -21,17 +22,28 @@ class ChessSettingsRepository(private val context: Context) {
 
     val enabled: Flow<Boolean> = context.chessDataStore.data.map { it[ENABLED] ?: true }
     val onlineEnabled: Flow<Boolean> = context.chessDataStore.data.map { it[ONLINE_ENABLED] ?: true }
-    val endpointUrl: Flow<String> = context.chessDataStore.data.map { it[ENDPOINT_URL] ?: "https://example.com/api/chess/analyze" }
+    val endpointUrl: Flow<String> = context.chessDataStore.data.map { preferences ->
+        val savedUrl = preferences[ENDPOINT_URL]
+        if (savedUrl.isNullOrBlank() || savedUrl == "https://example.com/api/chess/analyze") {
+            ChessApiConfig.DEFAULT_ENDPOINT_URL
+        } else {
+            savedUrl
+        }
+    }
     val localFallback: Flow<Boolean> = context.chessDataStore.data.map { it[LOCAL_FALLBACK] ?: false }
-    val fps: Flow<Int> = context.chessDataStore.data.map { it[FPS] ?: 1 }
+    val fps: Flow<Int> = context.chessDataStore.data.map { (it[FPS] ?: 1).coerceIn(1, 5) }
     val showEval: Flow<Boolean> = context.chessDataStore.data.map { it[SHOW_EVAL] ?: true }
     val showArrow: Flow<Boolean> = context.chessDataStore.data.map { it[SHOW_ARROW] ?: true }
 
     suspend fun updateEnabled(value: Boolean) { context.chessDataStore.edit { it[ENABLED] = value } }
     suspend fun updateOnlineEnabled(value: Boolean) { context.chessDataStore.edit { it[ONLINE_ENABLED] = value } }
-    suspend fun updateEndpointUrl(value: String) { context.chessDataStore.edit { it[ENDPOINT_URL] = value } }
+    suspend fun updateEndpointUrl(value: String) {
+        context.chessDataStore.edit {
+            it[ENDPOINT_URL] = value.trim().ifBlank { ChessApiConfig.DEFAULT_ENDPOINT_URL }
+        }
+    }
     suspend fun updateLocalFallback(value: Boolean) { context.chessDataStore.edit { it[LOCAL_FALLBACK] = value } }
-    suspend fun updateFps(value: Int) { context.chessDataStore.edit { it[FPS] = value } }
+    suspend fun updateFps(value: Int) { context.chessDataStore.edit { it[FPS] = value.coerceIn(1, 5) } }
     suspend fun updateShowEval(value: Boolean) { context.chessDataStore.edit { it[SHOW_EVAL] = value } }
     suspend fun updateShowArrow(value: Boolean) { context.chessDataStore.edit { it[SHOW_ARROW] = value } }
 }
