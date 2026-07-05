@@ -2,15 +2,13 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "railway-config" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
     - name: set up JDK 21
@@ -19,10 +17,8 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
         cache: gradle
-
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
-
     - name: Decode Keystore
       run: |
         if [ ! -f debug.keystore.base64 ]; then
@@ -30,13 +26,10 @@ jobs:
         else
           python3 -c "import base64; open('debug.keystore', 'wb').write(base64.b64decode(open('debug.keystore.base64', 'r').read()))"
         fi
-
     - name: Remove Corrupt Gradle Wrapper
       run: rm -f gradle/wrapper/gradle-wrapper.jar
-
     - name: Build with Gradle
       run: gradle clean assembleDebug --stacktrace --no-configuration-cache --no-daemon
-
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
