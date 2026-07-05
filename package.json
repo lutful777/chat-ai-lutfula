@@ -5,6 +5,10 @@
   "engines": {
     "node": "22.x"
   },
+  "scripts": {
+    "test": "node scripts/smoke-stockfish.js",
+    "vercel-build": "npm test"
+  },
   "dependencies": {
     "stockfish": "18.0.8"
   }
