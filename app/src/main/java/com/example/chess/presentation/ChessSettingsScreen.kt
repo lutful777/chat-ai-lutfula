@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.chess.data.ChessSettingsRepository
+import com.example.chess.engine.ChessApiConfig
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -21,15 +22,15 @@ fun ChessSettingsScreen(
     onNavigateToAttribution: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    
+
     val enabled by repository.enabled.collectAsState(initial = true)
     val onlineEnabled by repository.onlineEnabled.collectAsState(initial = true)
-    val endpointUrl by repository.endpointUrl.collectAsState(initial = "https://example.com/api/chess/analyze")
+    val endpointUrl by repository.endpointUrl.collectAsState(initial = ChessApiConfig.DEFAULT_ENDPOINT_URL)
     val localFallback by repository.localFallback.collectAsState(initial = false)
     val fps by repository.fps.collectAsState(initial = 1)
     val showEval by repository.showEval.collectAsState(initial = true)
     val showArrow by repository.showArrow.collectAsState(initial = true)
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -60,11 +61,15 @@ fun ChessSettingsScreen(
                     onCheckedChange = { coroutineScope.launch { repository.updateEnabled(it) } }
                 )
             }
-            
+
             HorizontalDivider()
-            
-            Text("Stockfish Online Settings", modifier = Modifier.padding(top = 16.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
-            
+
+            Text(
+                "Stockfish Online Settings",
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.titleMedium
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -76,14 +81,16 @@ fun ChessSettingsScreen(
                     onCheckedChange = { coroutineScope.launch { repository.updateOnlineEnabled(it) } }
                 )
             }
-            
+
             OutlinedTextField(
                 value = endpointUrl,
                 onValueChange = { coroutineScope.launch { repository.updateEndpointUrl(it) } },
                 label = { Text("URL Endpoint") },
+                supportingText = { Text("Default: ${ChessApiConfig.DEFAULT_ENDPOINT_URL}") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
             )
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -97,15 +104,15 @@ fun ChessSettingsScreen(
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            
-            Text("Capture FPS: \$fps", modifier = Modifier.padding(top = 8.dp))
+
+            Text("Capture FPS: $fps", modifier = Modifier.padding(top = 8.dp))
             Slider(
                 value = fps.toFloat(),
                 onValueChange = { coroutineScope.launch { repository.updateFps(it.toInt()) } },
                 valueRange = 1f..5f,
-                steps = 4
+                steps = 3
             )
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -117,7 +124,7 @@ fun ChessSettingsScreen(
                     onCheckedChange = { coroutineScope.launch { repository.updateShowEval(it) } }
                 )
             }
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -129,9 +136,9 @@ fun ChessSettingsScreen(
                     onCheckedChange = { coroutineScope.launch { repository.updateShowArrow(it) } }
                 )
             }
-            
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-            
+
             Button(
                 onClick = onNavigateToAttribution,
                 modifier = Modifier.fillMaxWidth()

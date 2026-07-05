@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -28,11 +30,11 @@ fun ChessAssistantScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    
+
     val projectionManager = remember {
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
-    
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -42,14 +44,8 @@ fun ChessAssistantScreen(
                 putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            context.startForegroundService(intent)
             viewModel.onPermissionGranted()
-            // Simulation
-            viewModel.simulatePipeline()
         } else {
             viewModel.onPermissionDenied()
         }
@@ -82,7 +78,7 @@ fun ChessAssistantScreen(
         ) {
             Text(text = "Status:", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             when (val currentState = state) {
                 is ChessAssistantState.Idle -> Text("Menunggu dimulai")
                 is ChessAssistantState.RequestingPermission -> Text("Meminta izin layar...")
@@ -97,35 +93,50 @@ fun ChessAssistantScreen(
                 }
                 is ChessAssistantState.Analyzing -> {
                     CircularProgressIndicator()
-                    Text("Menganalisis...")
+                    Text("Menganalisis dengan Stockfish...")
                 }
                 is ChessAssistantState.Result -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Best Move: \${currentState.bestMove}", style = MaterialTheme.typography.titleLarge)
-                            Text("Eval: \${currentState.evaluation}")
-                            Text("FEN: \${currentState.fen}", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "Best Move: ${currentState.bestMove}",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Text("Eval: ${currentState.evaluation}")
+                            Text("FEN: ${currentState.fen}", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
                 is ChessAssistantState.Error -> {
-                    Text("Error: \${currentState.message}", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        "Error: ${currentState.message}",
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(32.dp))
-            
+
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Button(
                     onClick = {
-                        viewModel.startCapture()
-                        launcher.launch(projectionManager.createScreenCaptureIntent())
+                        if (!Settings.canDrawOverlays(context)) {
+                            viewModel.onOverlayPermissionRequired()
+                            val permissionIntent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(permissionIntent)
+                        } else {
+                            viewModel.startCapture()
+                            launcher.launch(projectionManager.createScreenCaptureIntent())
+                        }
                     },
                     enabled = state == ChessAssistantState.Idle || state is ChessAssistantState.Error
                 ) {
                     Text("Start")
                 }
-                
+
                 Button(
                     onClick = {
                         viewModel.stopCapture()
