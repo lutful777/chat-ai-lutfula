@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.spacedBy
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
@@ -166,7 +166,7 @@ fun ChessAssistantScreen(
                 .padding(padding)
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+            verticalArrangement = Arrangement.Center
         ) {
             Text(
                 text = "Pembacaan Layar dan Panah Langkah",
@@ -241,7 +241,7 @@ fun ChessAssistantScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            Row(horizontalArrangement = spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = ::startWithRequiredPermissions,
                     enabled = featureEnabled &&
