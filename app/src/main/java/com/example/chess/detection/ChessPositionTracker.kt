@@ -13,7 +13,7 @@ sealed interface PositionTrackingResult {
 
 /**
  * Tracks a game from the normal initial chess position. Piece identities are
- * retained from move history, so the screen detector only needs occupancy and
+ * retained from move history, so the image detector only needs occupancy and
  * visual-change information after the initial position has been confirmed.
  */
 class ChessPositionTracker {
@@ -36,8 +36,8 @@ class ChessPositionTracker {
     }
 
     fun update(detection: BoardDetectionResult): PositionTrackingResult {
-        val occupied = toLogical(detection.occupied, detection.orientation)
-        val signatures = toLogical(detection.signatures, detection.orientation)
+        val occupied = toLogicalOccupancy(detection.occupied, detection.orientation)
+        val signatures = toLogicalSignatures(detection.signatures, detection.orientation)
         val digest = digest(occupied, signatures)
 
         if (pendingDigest == digest) {
@@ -58,29 +58,34 @@ class ChessPositionTracker {
                 )
             }
             board = initialBoard()
-            previousOccupied = copy(occupied)
-            previousSignatures = copy(signatures)
+            previousOccupied = copyOccupancy(occupied)
+            previousSignatures = copySignatures(signatures)
             whiteToMove = true
             val fen = FenConverter.toFen(board!!, true)
             lastFen = fen
             return PositionTrackingResult.Position(fen, changed = true)
         }
 
-        val oldOccupied = previousOccupied ?: return PositionTrackingResult.Waiting("Menyinkronkan papan…")
-        val oldSignatures = previousSignatures ?: return PositionTrackingResult.Waiting("Menyinkronkan papan…")
+        val oldOccupied = previousOccupied
+            ?: return PositionTrackingResult.Waiting("Menyinkronkan papan…")
+        val oldSignatures = previousSignatures
+            ?: return PositionTrackingResult.Waiting("Menyinkronkan papan…")
 
-        if (sameOccupancy(oldOccupied, occupied) && !hasMeaningfulSignatureChange(oldSignatures, signatures)) {
+        if (sameOccupancy(oldOccupied, occupied) &&
+            !hasMeaningfulSignatureChange(oldSignatures, signatures)) {
             val fen = FenConverter.toFen(board!!, whiteToMove)
             return PositionTrackingResult.Position(fen, changed = false)
         }
 
         val move = inferMove(board!!, oldOccupied, occupied, oldSignatures, signatures)
-            ?: return PositionTrackingResult.Waiting("Gerakan belum terbaca dengan yakin. Tunggu animasi selesai.")
+            ?: return PositionTrackingResult.Waiting(
+                "Gerakan belum terbaca dengan yakin. Tunggu animasi selesai."
+            )
 
         applyMove(board!!, move.first, move.second)
         whiteToMove = !whiteToMove
-        previousOccupied = copy(occupied)
-        previousSignatures = copy(signatures)
+        previousOccupied = copyOccupancy(occupied)
+        previousSignatures = copySignatures(signatures)
 
         val fen = FenConverter.toFen(board!!, whiteToMove)
         val changed = fen != lastFen
@@ -96,12 +101,14 @@ class ChessPositionTracker {
         newSignatures: Array<IntArray>
     ): Pair<Int, Int>? {
         val sources = ArrayList<Int>()
+        val currentColor = if (whiteToMove) ChessColor.WHITE else ChessColor.BLACK
         for (row in 0 until 8) {
             for (col in 0 until 8) {
                 val index = row * 8 + col
                 val piece = currentBoard[row][col]
-                if (piece != null && piece.color == if (whiteToMove) ChessColor.WHITE else ChessColor.BLACK) {
-                    if (oldOccupied[row][col] && !newOccupied[row][col]) sources += index
+                if (piece != null && piece.color == currentColor &&
+                    oldOccupied[row][col] && !newOccupied[row][col]) {
+                    sources += index
                 }
             }
         }
@@ -118,8 +125,11 @@ class ChessPositionTracker {
                 if (!newOccupied[row][col]) continue
                 val index = row * 8 + col
                 if (index == source) continue
-                val becameOccupied = !oldOccupied[row][col] && newOccupied[row][col]
-                val visualChange = signatureDistance(oldSignatures[row][col], newSignatures[row][col])
+                val becameOccupied = !oldOccupied[row][col]
+                val visualChange = signatureDistance(
+                    oldSignatures[row][col],
+                    newSignatures[row][col]
+                )
                 if (becameOccupied || visualChange >= MIN_SIGNATURE_CHANGE) {
                     destinations += index to visualChange
                 }
@@ -154,18 +164,21 @@ class ChessPositionTracker {
                 val startRow = if (piece.color == ChessColor.WHITE) 6 else 1
                 when {
                     dc == 0 && dr == direction && target == null -> true
-                    dc == 0 && dr == direction * 2 && fromRow == startRow && target == null &&
-                        board[fromRow + direction][fromCol] == null -> true
+                    dc == 0 && dr == direction * 2 && fromRow == startRow &&
+                        target == null && board[fromRow + direction][fromCol] == null -> true
                     abs(dc) == 1 && dr == direction -> true
                     else -> false
                 }
             }
             ChessPieceType.KNIGHT -> abs(dr) * abs(dc) == 2
-            ChessPieceType.BISHOP -> abs(dr) == abs(dc) && pathClear(board, fromRow, fromCol, toRow, toCol)
-            ChessPieceType.ROOK -> (dr == 0 || dc == 0) && pathClear(board, fromRow, fromCol, toRow, toCol)
+            ChessPieceType.BISHOP -> abs(dr) == abs(dc) &&
+                pathClear(board, fromRow, fromCol, toRow, toCol)
+            ChessPieceType.ROOK -> (dr == 0 || dc == 0) &&
+                pathClear(board, fromRow, fromCol, toRow, toCol)
             ChessPieceType.QUEEN -> (dr == 0 || dc == 0 || abs(dr) == abs(dc)) &&
                 pathClear(board, fromRow, fromCol, toRow, toCol)
-            ChessPieceType.KING -> (abs(dr) <= 1 && abs(dc) <= 1) || (dr == 0 && abs(dc) == 2)
+            ChessPieceType.KING -> (abs(dr) <= 1 && abs(dc) <= 1) ||
+                (dr == 0 && abs(dc) == 2)
         }
     }
 
@@ -195,7 +208,8 @@ class ChessPositionTracker {
         val toCol = to % 8
         var piece = board[fromRow][fromCol] ?: return
 
-        if (piece.type == ChessPieceType.PAWN && fromCol != toCol && board[toRow][toCol] == null) {
+        if (piece.type == ChessPieceType.PAWN &&
+            fromCol != toCol && board[toRow][toCol] == null) {
             board[fromRow][toCol] = null
         }
 
@@ -226,7 +240,7 @@ class ChessPositionTracker {
     }
 
     private fun initialBoard(): Array<Array<ChessPiece?>> {
-        val board = Array(8) { arrayOfNulls<ChessPiece>(8) }
+        val result = Array(8) { arrayOfNulls<ChessPiece>(8) }
         val backRank = arrayOf(
             ChessPieceType.ROOK,
             ChessPieceType.KNIGHT,
@@ -238,43 +252,54 @@ class ChessPositionTracker {
             ChessPieceType.ROOK
         )
         for (col in 0 until 8) {
-            board[0][col] = ChessPiece(backRank[col], ChessColor.BLACK)
-            board[1][col] = ChessPiece(ChessPieceType.PAWN, ChessColor.BLACK)
-            board[6][col] = ChessPiece(ChessPieceType.PAWN, ChessColor.WHITE)
-            board[7][col] = ChessPiece(backRank[col], ChessColor.WHITE)
+            result[0][col] = ChessPiece(backRank[col], ChessColor.BLACK)
+            result[1][col] = ChessPiece(ChessPieceType.PAWN, ChessColor.BLACK)
+            result[6][col] = ChessPiece(ChessPieceType.PAWN, ChessColor.WHITE)
+            result[7][col] = ChessPiece(backRank[col], ChessColor.WHITE)
         }
-        return board
+        return result
     }
 
-    private fun toLogical(
+    private fun toLogicalOccupancy(
         input: Array<BooleanArray>,
         orientation: BoardOrientation
     ): Array<BooleanArray> {
-        if (orientation == BoardOrientation.WHITE_BOTTOM) return copy(input)
+        if (orientation == BoardOrientation.WHITE_BOTTOM) return copyOccupancy(input)
         return Array(8) { row -> BooleanArray(8) { col -> input[7 - row][7 - col] } }
     }
 
-    private fun toLogical(
+    private fun toLogicalSignatures(
         input: Array<IntArray>,
         orientation: BoardOrientation
     ): Array<IntArray> {
-        if (orientation == BoardOrientation.WHITE_BOTTOM) return copy(input)
+        if (orientation == BoardOrientation.WHITE_BOTTOM) return copySignatures(input)
         return Array(8) { row -> IntArray(8) { col -> input[7 - row][7 - col] } }
     }
 
-    private fun hasMeaningfulSignatureChange(old: Array<IntArray>, new: Array<IntArray>): Boolean {
+    private fun hasMeaningfulSignatureChange(
+        old: Array<IntArray>,
+        new: Array<IntArray>
+    ): Boolean {
         for (row in 0 until 8) {
             for (col in 0 until 8) {
-                if (signatureDistance(old[row][col], new[row][col]) >= MIN_SIGNATURE_CHANGE) return true
+                if (signatureDistance(old[row][col], new[row][col]) >= MIN_SIGNATURE_CHANGE) {
+                    return true
+                }
             }
         }
         return false
     }
 
-    private fun signatureDistance(first: Int, second: Int): Int = Integer.bitCount(first xor second)
+    private fun signatureDistance(first: Int, second: Int): Int =
+        Integer.bitCount(first xor second)
 
-    private fun sameOccupancy(first: Array<BooleanArray>, second: Array<BooleanArray>): Boolean {
-        for (row in 0 until 8) if (!first[row].contentEquals(second[row])) return false
+    private fun sameOccupancy(
+        first: Array<BooleanArray>,
+        second: Array<BooleanArray>
+    ): Boolean {
+        for (row in 0 until 8) {
+            if (!first[row].contentEquals(second[row])) return false
+        }
         return true
     }
 
@@ -289,10 +314,10 @@ class ChessPositionTracker {
         return value
     }
 
-    private fun copy(source: Array<BooleanArray>): Array<BooleanArray> =
+    private fun copyOccupancy(source: Array<BooleanArray>): Array<BooleanArray> =
         Array(source.size) { source[it].copyOf() }
 
-    private fun copy(source: Array<IntArray>): Array<IntArray> =
+    private fun copySignatures(source: Array<IntArray>): Array<IntArray> =
         Array(source.size) { source[it].copyOf() }
 
     companion object {
