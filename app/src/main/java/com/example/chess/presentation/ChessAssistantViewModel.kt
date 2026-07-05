@@ -25,6 +25,14 @@ class ChessAssistantViewModel : ViewModel() {
         )
     }
 
+    fun onFeatureDisabled() {
+        ChessAssistantController.update(
+            ChessAssistantState.Error(
+                "Chess Assistant sedang dinonaktifkan. Aktifkan kembali dari pengaturan."
+            )
+        )
+    }
+
     fun stopCapture() {
         ChessAssistantController.reset()
     }
