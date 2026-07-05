@@ -38,7 +38,8 @@ class ScreenFrameProcessor(
         }
 
         val now = SystemClock.elapsedRealtime()
-        if (now - lastAcceptedFrameAt < FRAME_INTERVAL_MS || !processing.compareAndSet(false, true)) {
+        if (now - lastAcceptedFrameAt < FRAME_INTERVAL_MS ||
+            !processing.compareAndSet(false, true)) {
             image.close()
             return
         }
@@ -63,7 +64,9 @@ class ScreenFrameProcessor(
             } catch (error: Throwable) {
                 if (!closed) {
                     ChessAssistantController.update(
-                        ChessAssistantState.Error(error.message ?: "Pemrosesan layar gagal.")
+                        ChessAssistantState.Error(
+                            error.message ?: "Pemrosesan layar gagal."
+                        )
                     )
                 }
             } finally {
@@ -71,12 +74,6 @@ class ScreenFrameProcessor(
                 processing.set(false)
             }
         }
-    }
-
-    fun resetSession() {
-        tracker.reset()
-        engine.stopAnalysis()
-        ChessAssistantController.update(ChessAssistantState.SearchingBoard)
     }
 
     fun close() {
@@ -91,22 +88,35 @@ class ScreenFrameProcessor(
     private suspend fun processBitmap(bitmap: Bitmap) {
         if (closed) return
 
-        ChessAssistantController.update(ChessAssistantState.SearchingBoard)
-        val detection = detector.detectBoard(bitmap) ?: return
+        val previousState = ChessAssistantController.state.value
+        if (previousState !is ChessAssistantState.Result) {
+            ChessAssistantController.update(ChessAssistantState.SearchingBoard)
+        }
 
-        ChessAssistantController.update(ChessAssistantState.RecognizingPosition)
+        val detection = detector.detectBoard(bitmap)
+        if (detection == null) return
+
+        if (previousState !is ChessAssistantState.Result) {
+            ChessAssistantController.update(ChessAssistantState.RecognizingPosition)
+        }
+
         when (val tracking = tracker.update(detection)) {
             is PositionTrackingResult.Waiting -> {
-                ChessAssistantController.update(
-                    ChessAssistantState.Waiting(tracking.message)
-                )
+                if (previousState !is ChessAssistantState.Result) {
+                    ChessAssistantController.update(
+                        ChessAssistantState.Waiting(tracking.message)
+                    )
+                }
             }
 
             is PositionTrackingResult.Position -> {
                 if (!tracking.changed) return
 
                 ChessAssistantController.update(ChessAssistantState.Analyzing)
-                val result = engine.analyze(tracking.fen, depth = ENGINE_DEPTH)
+                val result = engine.analyze(
+                    fen = tracking.fen,
+                    depth = ENGINE_DEPTH
+                )
                 if (closed) return
 
                 ChessAssistantController.update(
@@ -124,7 +134,8 @@ class ScreenFrameProcessor(
     }
 
     private fun imageToBitmap(image: Image): Bitmap {
-        val plane = image.planes.firstOrNull() ?: error("Frame layar tidak memiliki pixel plane.")
+        val plane = image.planes.firstOrNull()
+            ?: error("Frame layar tidak memiliki pixel plane.")
         val buffer = plane.buffer
         buffer.rewind()
 
