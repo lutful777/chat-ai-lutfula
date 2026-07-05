@@ -28,6 +28,11 @@ class ScreenCaptureService : Service() {
         const val ACTION_STOP = "ACTION_STOP"
         const val EXTRA_RESULT_CODE = "EXTRA_RESULT_CODE"
         const val EXTRA_RESULT_DATA = "EXTRA_RESULT_DATA"
+        const val EXTRA_DEPTH = "EXTRA_DEPTH"
+        const val EXTRA_FPS = "EXTRA_FPS"
+        const val EXTRA_MIN_CONFIDENCE = "EXTRA_MIN_CONFIDENCE"
+        const val EXTRA_SHOW_EVALUATION = "EXTRA_SHOW_EVALUATION"
+        const val EXTRA_SHOW_ARROW = "EXTRA_SHOW_ARROW"
 
         private const val CHANNEL_ID = "chess_screen_capture"
         private const val NOTIFICATION_ID = 1001
@@ -66,7 +71,23 @@ class ScreenCaptureService : Service() {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 val resultData = readResultData(intent)
                 if (resultCode != 0 && resultData != null) {
-                    startCapture(resultCode, resultData)
+                    startCapture(
+                        resultCode = resultCode,
+                        resultData = resultData,
+                        settings = CaptureSettings(
+                            depth = intent.getIntExtra(EXTRA_DEPTH, 3).coerceIn(1, 3),
+                            fps = intent.getIntExtra(EXTRA_FPS, 1).coerceIn(1, 3),
+                            minimumConfidence = intent.getFloatExtra(
+                                EXTRA_MIN_CONFIDENCE,
+                                0.15f
+                            ).coerceIn(0f, 1f),
+                            showEvaluation = intent.getBooleanExtra(
+                                EXTRA_SHOW_EVALUATION,
+                                true
+                            ),
+                            showArrow = intent.getBooleanExtra(EXTRA_SHOW_ARROW, true)
+                        )
+                    )
                 } else {
                     ChessAssistantController.update(
                         ChessAssistantState.Error("Izin membaca layar tidak valid.")
@@ -80,7 +101,11 @@ class ScreenCaptureService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startCapture(resultCode: Int, resultData: Intent) {
+    private fun startCapture(
+        resultCode: Int,
+        resultData: Intent,
+        settings: CaptureSettings
+    ) {
         if (isRunning) return
 
         startForegroundCompat("Mempersiapkan pembacaan layar…")
@@ -97,10 +122,24 @@ class ScreenCaptureService : Service() {
 
         mediaProjection = projection
         projection.registerCallback(projectionCallback, captureHandler)
-        frameProcessor = ScreenFrameProcessor { move, bounds, orientation ->
-            updateNotification("Langkah terbaik: $move")
-            overlayManager?.showMove(move, bounds, orientation)
-        }
+        frameProcessor = ScreenFrameProcessor(
+            framesPerSecond = settings.fps,
+            engineDepth = settings.depth,
+            minimumConfidence = settings.minimumConfidence,
+            showEvaluation = settings.showEvaluation,
+            onBestMove = { move, bounds, orientation ->
+                updateNotification("Langkah terbaik: $move")
+                if (settings.showArrow) {
+                    overlayManager?.showMove(move, bounds, orientation)
+                } else {
+                    overlayManager?.hide()
+                }
+            },
+            onBoardLost = {
+                overlayManager?.hide()
+                updateNotification("Mencari papan catur…")
+            }
+        )
 
         val metrics = resources.displayMetrics
         val width = metrics.widthPixels
@@ -129,6 +168,14 @@ class ScreenCaptureService : Service() {
             null,
             captureHandler
         )
+
+        if (virtualDisplay == null) {
+            ChessAssistantController.update(
+                ChessAssistantState.Error("Virtual display gagal dibuat.")
+            )
+            stopCapture(resetUi = false, stopService = true)
+            return
+        }
 
         isRunning = true
         ChessAssistantController.update(ChessAssistantState.SearchingBoard)
@@ -248,4 +295,12 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private data class CaptureSettings(
+        val depth: Int,
+        val fps: Int,
+        val minimumConfidence: Float,
+        val showEvaluation: Boolean,
+        val showArrow: Boolean
+    )
 }
