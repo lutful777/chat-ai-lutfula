@@ -1,7 +1,10 @@
-const fs = require('node:fs');
-const Stockfish = require('stockfish.wasm');
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
-const wasmBinary = fs.readFileSync(require.resolve('stockfish.wasm/stockfish.wasm'));
+const require = createRequire(import.meta.url);
+const Stockfish = require('stockfish.wasm');
+const wasmBinary = readFileSync(require.resolve('stockfish.wasm/stockfish.wasm'));
+
 const DEFAULT_MOVE_TIME_MS = 1500;
 const MAX_MOVE_TIME_MS = 5000;
 const MAX_DEPTH = 24;
@@ -196,7 +199,7 @@ function enqueueAnalysis(task) {
   return current;
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   setHeaders(res);
 
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -252,4 +255,4 @@ module.exports = async function handler(req, res) {
       details: error instanceof Error ? error.message : String(error),
     });
   }
-};
+}
