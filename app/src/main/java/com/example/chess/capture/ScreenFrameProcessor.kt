@@ -119,6 +119,7 @@ class ScreenFrameProcessor(
 
     private suspend fun processBitmap(bitmap: Bitmap) {
         if (closed) return
+        val previousState = _resultFlow.value
         val detection = detector.detectBoard(bitmap)
 
         if (detection == null || detection.confidence < minimumConfidence) {
@@ -133,11 +134,15 @@ class ScreenFrameProcessor(
         }
 
         missingBoardFrames = 0
-        _resultFlow.value = ProcessorState.RecognizingPosition
+        if (previousState !is ProcessorState.Result) {
+            _resultFlow.value = ProcessorState.RecognizingPosition
+        }
 
         when (val tracking = tracker.update(detection)) {
             is PositionTrackingResult.Waiting -> {
-                _resultFlow.value = ProcessorState.Waiting(tracking.message)
+                if (previousState !is ProcessorState.Result) {
+                    _resultFlow.value = ProcessorState.Waiting(tracking.message)
+                }
             }
 
             is PositionTrackingResult.Position -> {
