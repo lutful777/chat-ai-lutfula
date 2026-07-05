@@ -8,7 +8,11 @@ import kotlin.math.abs
 
 sealed interface PositionTrackingResult {
     data class Waiting(val message: String) : PositionTrackingResult
-    data class Position(val fen: String, val changed: Boolean) : PositionTrackingResult
+    data class Position(
+        val fen: String,
+        val changed: Boolean,
+        val orientation: BoardOrientation
+    ) : PositionTrackingResult
 }
 
 /**
@@ -24,6 +28,7 @@ class ChessPositionTracker {
     private var lastFen: String? = null
     private var pendingDigest: Long? = null
     private var pendingCount = 0
+    private var sessionOrientation: BoardOrientation? = null
 
     fun reset() {
         board = null
@@ -33,11 +38,13 @@ class ChessPositionTracker {
         lastFen = null
         pendingDigest = null
         pendingCount = 0
+        sessionOrientation = null
     }
 
     fun update(detection: BoardDetectionResult): PositionTrackingResult {
-        val occupied = toLogicalOccupancy(detection.occupied, detection.orientation)
-        val signatures = toLogicalSignatures(detection.signatures, detection.orientation)
+        val orientation = sessionOrientation ?: detection.orientation
+        val occupied = toLogicalOccupancy(detection.occupied, orientation)
+        val signatures = toLogicalSignatures(detection.signatures, orientation)
         val digest = digest(occupied, signatures)
 
         if (pendingDigest == digest) {
@@ -57,13 +64,18 @@ class ChessPositionTracker {
                     "Mulai pembacaan saat papan masih pada posisi awal permainan."
                 )
             }
+            sessionOrientation = orientation
             board = initialBoard()
             previousOccupied = copyOccupancy(occupied)
             previousSignatures = copySignatures(signatures)
             whiteToMove = true
             val fen = FenConverter.toFen(board!!, true)
             lastFen = fen
-            return PositionTrackingResult.Position(fen, changed = true)
+            return PositionTrackingResult.Position(
+                fen = fen,
+                changed = true,
+                orientation = orientation
+            )
         }
 
         val oldOccupied = previousOccupied
@@ -74,7 +86,11 @@ class ChessPositionTracker {
         if (sameOccupancy(oldOccupied, occupied) &&
             !hasMeaningfulSignatureChange(oldSignatures, signatures)) {
             val fen = FenConverter.toFen(board!!, whiteToMove)
-            return PositionTrackingResult.Position(fen, changed = false)
+            return PositionTrackingResult.Position(
+                fen = fen,
+                changed = false,
+                orientation = orientation
+            )
         }
 
         val move = inferMove(board!!, oldOccupied, occupied, oldSignatures, signatures)
@@ -90,7 +106,11 @@ class ChessPositionTracker {
         val fen = FenConverter.toFen(board!!, whiteToMove)
         val changed = fen != lastFen
         lastFen = fen
-        return PositionTrackingResult.Position(fen, changed)
+        return PositionTrackingResult.Position(
+            fen = fen,
+            changed = changed,
+            orientation = orientation
+        )
     }
 
     private fun inferMove(
@@ -111,6 +131,10 @@ class ChessPositionTracker {
                     sources += index
                 }
             }
+        }
+
+        if (sources.size == 2) {
+            inferCastling(currentBoard, sources, newOccupied)?.let { return it }
         }
         if (sources.size != 1) return null
 
@@ -140,6 +164,29 @@ class ChessPositionTracker {
             .filter { (index, _) -> isPseudoLegal(currentBoard, source, index, piece) }
             .maxByOrNull { (_, change) -> change }
             ?.let { source to it.first }
+    }
+
+    private fun inferCastling(
+        currentBoard: Array<Array<ChessPiece?>>,
+        sources: List<Int>,
+        newOccupied: Array<BooleanArray>
+    ): Pair<Int, Int>? {
+        val kingSource = sources.firstOrNull { index ->
+            currentBoard[index / 8][index % 8]?.type == ChessPieceType.KING
+        } ?: return null
+        val rookSource = sources.firstOrNull { index ->
+            currentBoard[index / 8][index % 8]?.type == ChessPieceType.ROOK
+        } ?: return null
+
+        val kingRow = kingSource / 8
+        val kingCol = kingSource % 8
+        val rookRow = rookSource / 8
+        val rookCol = rookSource % 8
+        if (kingRow != rookRow || kingCol != 4 || rookCol !in intArrayOf(0, 7)) return null
+
+        val destinationCol = if (rookCol == 7) 6 else 2
+        if (!newOccupied[kingRow][destinationCol]) return null
+        return kingSource to (kingRow * 8 + destinationCol)
     }
 
     private fun isPseudoLegal(
