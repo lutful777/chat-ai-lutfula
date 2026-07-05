@@ -1,0 +1,12 @@
+{
+  "name": "chat-ai-lutfula-vercel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vercel API functions for Chat AI Lutfula",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "stockfish.wasm": "0.10.0"
+  }
+}
