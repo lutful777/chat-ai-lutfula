@@ -1,0 +1,15 @@
+.gradle/
+.idea/
+app/
+build/
+gradle/
+*.apk
+*.aab
+*.iml
+*.jks
+*.keystore
+debug.keystore
+generate_*.py
+gradlew
+gradlew.bat
+local.properties
