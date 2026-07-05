@@ -3,14 +3,17 @@ package com.example.chess.presentation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.chess.data.ChessSettingsRepository
+import com.example.chess.domain.PlayerSide
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -45,6 +49,7 @@ fun ChessSettingsScreen(
     val minConfidence by repository.minConfidence.collectAsState(initial = 0.15f)
     val showEval by repository.showEval.collectAsState(initial = true)
     val showArrow by repository.showArrow.collectAsState(initial = true)
+    val playerSide by repository.playerSide.collectAsState(initial = PlayerSide.AUTO.name)
 
     Scaffold(
         topBar = {
@@ -77,6 +82,41 @@ fun ChessSettingsScreen(
             )
 
             HorizontalDivider()
+
+            Text(
+                text = "Bidak yang saya mainkan",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+            Text(
+                text = "Otomatis berarti warna bidak yang berada di bagian bawah papan.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PlayerSide.entries.forEach { side ->
+                    FilterChip(
+                        selected = playerSide == side.name,
+                        onClick = {
+                            coroutineScope.launch {
+                                repository.updatePlayerSide(side.name)
+                            }
+                        },
+                        label = {
+                            Text(
+                                when (side) {
+                                    PlayerSide.AUTO -> "Otomatis"
+                                    PlayerSide.WHITE -> "Putih"
+                                    PlayerSide.BLACK -> "Hitam"
+                                }
+                            )
+                        }
+                    )
+                }
+            }
 
             Text(
                 text = "Kedalaman mesin: $depth",
