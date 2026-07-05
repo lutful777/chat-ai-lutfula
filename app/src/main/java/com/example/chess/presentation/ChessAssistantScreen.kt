@@ -1,9 +1,6 @@
 package com.example.chess.presentation
 
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import android.media.projection.MediaProjectionManager
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -16,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.example.chess.capture.ScreenCaptureService
 import com.example.chess.domain.ChessAssistantState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,26 +25,20 @@ fun ChessAssistantScreen(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
 
-    val projectionManager = remember {
-        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-    }
-
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            val intent = Intent(context, ScreenCaptureService::class.java).apply {
-                action = ScreenCaptureService.ACTION_START
-                putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
-                putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
-            }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        } else {
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) {
             viewModel.onPermissionDenied()
+        } else {
+            val bitmap = runCatching {
+                context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
+            }.getOrNull()
+            if (bitmap == null) {
+                viewModel.onPermissionDenied()
+            } else {
+                viewModel.analyzeBitmap(bitmap)
+            }
         }
     }
 
@@ -77,13 +67,19 @@ fun ChessAssistantScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(text = "Status", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Analisis Screenshot Catur", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Ambil screenshot papan mulai dari posisi awal, lalu pilih gambarnya di sini. " +
+                    "Untuk langkah berikutnya, pilih screenshot terbaru dari permainan yang sama.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(20.dp))
 
             when (val currentState = state) {
-                ChessAssistantState.Idle -> Text("Menunggu dimulai")
-                ChessAssistantState.RequestingPermission -> Text("Meminta izin layar…")
-                ChessAssistantState.CapturingScreen -> Text("Pembacaan layar aktif")
+                ChessAssistantState.Idle -> Text("Siap menganalisis")
+                ChessAssistantState.RequestingPermission -> Text("Pilih screenshot dari galeri…")
+                ChessAssistantState.CapturingScreen -> Text("Gambar diterima")
                 ChessAssistantState.SearchingBoard -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
@@ -92,12 +88,12 @@ fun ChessAssistantScreen(
                 ChessAssistantState.RecognizingPosition -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Membaca posisi papan…")
+                    Text("Membaca perubahan posisi…")
                 }
                 ChessAssistantState.Analyzing -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Menganalisis posisi…")
+                    Text("Menghitung langkah…")
                 }
                 is ChessAssistantState.Result -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -123,30 +119,23 @@ fun ChessAssistantScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = {
                         viewModel.startCapture()
-                        launcher.launch(projectionManager.createScreenCaptureIntent())
+                        imagePicker.launch("image/*")
                     },
-                    enabled = state == ChessAssistantState.Idle || state is ChessAssistantState.Error
+                    enabled = state !is ChessAssistantState.SearchingBoard &&
+                        state !is ChessAssistantState.RecognizingPosition &&
+                        state !is ChessAssistantState.Analyzing
                 ) {
-                    Text("Start")
+                    Text("Pilih Screenshot")
                 }
 
-                Button(
-                    onClick = {
-                        val intent = Intent(context, ScreenCaptureService::class.java).apply {
-                            action = ScreenCaptureService.ACTION_STOP
-                        }
-                        context.startService(intent)
-                        viewModel.stopCapture()
-                    },
-                    enabled = state != ChessAssistantState.Idle
-                ) {
-                    Text("Stop")
+                OutlinedButton(onClick = viewModel::stopCapture) {
+                    Text("Reset Sesi")
                 }
             }
         }
