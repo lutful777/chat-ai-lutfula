@@ -14,69 +14,63 @@ class UciEngine(private val enginePath: String) : ChessEngine {
     private var writer: BufferedWriter? = null
 
     fun start() {
-        try {
-            process = ProcessBuilder(enginePath).start()
-            reader = BufferedReader(InputStreamReader(process?.inputStream))
-            writer = BufferedWriter(OutputStreamWriter(process?.outputStream))
-            sendCommand("uci")
-            // Wait for uciok
-            var line: String?
-            while (reader?.readLine().also { line = it } != null) {
-                if (line == "uciok") break
-            }
-            sendCommand("isready")
-            while (reader?.readLine().also { line = it } != null) {
-                if (line == "readyok") break
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        process = ProcessBuilder(enginePath).start()
+        reader = BufferedReader(InputStreamReader(process?.inputStream))
+        writer = BufferedWriter(OutputStreamWriter(process?.outputStream))
+        sendCommand("uci")
+        waitFor("uciok")
+        sendCommand("isready")
+        waitFor("readyok")
     }
 
     override suspend fun analyze(fen: String, depth: Int): ChessAnalysisResult = withContext(Dispatchers.IO) {
         if (process == null) start()
-        sendCommand("position fen \$fen")
-        sendCommand("go depth \$depth")
-        
-        var bestMove = ""
-        var ponder = ""
-        var eval = ""
-        
-        try {
-            var line: String?
-            while (reader?.readLine().also { line = it } != null) {
-                val currentLine = line ?: ""
-                if (currentLine.startsWith("info depth \$depth") && currentLine.contains("score cp")) {
-                    val parts = currentLine.split(" ")
-                    val scoreIndex = parts.indexOf("cp")
-                    if (scoreIndex != -1 && scoreIndex + 1 < parts.size) {
-                        val scoreCp = parts[scoreIndex + 1].toIntOrNull() ?: 0
-                        eval = String.format("%.2f", scoreCp / 100.0)
-                    }
-                } else if (currentLine.startsWith("info depth \$depth") && currentLine.contains("score mate")) {
-                    val parts = currentLine.split(" ")
-                    val scoreIndex = parts.indexOf("mate")
-                    if (scoreIndex != -1 && scoreIndex + 1 < parts.size) {
-                        eval = "M" + parts[scoreIndex + 1]
-                    }
+        sendCommand("position fen $fen")
+        sendCommand("go depth $depth")
+
+        var bestMove = "-"
+        var ponder: String? = null
+        var evaluation = "0.00"
+        var reachedDepth = 0
+
+        while (true) {
+            val currentLine = reader?.readLine() ?: break
+            if (currentLine.startsWith("info ")) {
+                val parts = currentLine.split(' ')
+                val depthIndex = parts.indexOf("depth")
+                if (depthIndex >= 0 && depthIndex + 1 < parts.size) {
+                    reachedDepth = parts[depthIndex + 1].toIntOrNull() ?: reachedDepth
                 }
-                
-                if (currentLine.startsWith("bestmove")) {
-                    val parts = currentLine.split(" ")
-                    if (parts.size >= 2) {
-                        bestMove = parts[1]
+                val cpIndex = parts.indexOf("cp")
+                val mateIndex = parts.indexOf("mate")
+                when {
+                    cpIndex >= 0 && cpIndex + 1 < parts.size -> {
+                        val score = parts[cpIndex + 1].toIntOrNull() ?: 0
+                        evaluation = "%+.2f".format(score / 100.0)
                     }
-                    if (parts.size >= 4 && parts[2] == "ponder") {
-                        ponder = parts[3]
+                    mateIndex >= 0 && mateIndex + 1 < parts.size -> {
+                        evaluation = "M${parts[mateIndex + 1]}"
                     }
-                    break
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+
+            if (currentLine.startsWith("bestmove")) {
+                val parts = currentLine.split(' ')
+                if (parts.size >= 2) bestMove = parts[1]
+                val ponderIndex = parts.indexOf("ponder")
+                if (ponderIndex >= 0 && ponderIndex + 1 < parts.size) {
+                    ponder = parts[ponderIndex + 1]
+                }
+                break
+            }
         }
-        
-        ChessAnalysisResult(bestMove, ponder, eval, depth)
+
+        ChessAnalysisResult(
+            bestMove = bestMove,
+            ponderMove = ponder,
+            evaluation = evaluation,
+            depth = if (reachedDepth > 0) reachedDepth else depth
+        )
     }
 
     override fun stopAnalysis() {
@@ -84,19 +78,24 @@ class UciEngine(private val enginePath: String) : ChessEngine {
     }
 
     override fun close() {
-        sendCommand("quit")
-        try {
-            process?.waitFor()
-        } catch (e: Exception) {}
+        runCatching { sendCommand("quit") }
+        runCatching { process?.destroy() }
         process = null
+        reader = null
+        writer = null
+    }
+
+    private fun waitFor(expected: String) {
+        while (true) {
+            val line = reader?.readLine() ?: error("UCI engine stopped before $expected")
+            if (line == expected) return
+        }
     }
 
     private fun sendCommand(command: String) {
-        try {
-            writer?.write(command + "\n")
-            writer?.flush()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        val output = writer ?: return
+        output.write(command)
+        output.newLine()
+        output.flush()
     }
 }
