@@ -38,7 +38,7 @@ class RemoteStockfishEngine(
         try {
             coroutineContext.ensureActive()
             val url = URL(endpointUrl)
-            connection = (url.openConnection() as HttpURLConnection).apply {
+            val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
@@ -47,24 +47,25 @@ class RemoteStockfishEngine(
                 doOutput = true
                 useCaches = false
             }
-            activeConnection = connection
+            connection = conn
+            activeConnection = conn
 
             val requestBody = JSONObject().apply {
                 put("fen", fen)
                 put("requestId", requestId)
             }.toString()
 
-            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
                 writer.write(requestBody)
                 writer.flush()
             }
 
             coroutineContext.ensureActive()
-            val responseCode = connection.responseCode
+            val responseCode = conn.responseCode
             val responseText = if (responseCode == HttpURLConnection.HTTP_OK) {
-                connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             } else {
-                connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             }
 
             if (responseCode != HttpURLConnection.HTTP_OK) {
