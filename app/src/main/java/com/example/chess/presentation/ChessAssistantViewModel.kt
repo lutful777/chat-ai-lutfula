@@ -45,7 +45,13 @@ class ChessAssistantViewModel : ViewModel() {
                 }
 
                 ChessAssistantController.update(ChessAssistantState.RecognizingPosition)
-                when (val tracking = tracker.update(detection)) {
+                var tracking: PositionTrackingResult = tracker.update(detection)
+                if (tracking is PositionTrackingResult.Waiting &&
+                    tracking.message.startsWith("Menunggu gambar papan stabil")) {
+                    tracking = tracker.update(detection)
+                }
+
+                when (tracking) {
                     is PositionTrackingResult.Waiting -> {
                         ChessAssistantController.update(ChessAssistantState.Error(tracking.message))
                     }
