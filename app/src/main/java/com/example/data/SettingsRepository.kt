@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.map
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.example.network.AiModelConfig
-import com.example.network.TextApiRuntimeConfig
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -64,13 +63,10 @@ class SettingsRepository(private val context: Context) {
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
 
     private val secureSettingsManager = SecureSettingsManager(context)
-    private val initialTextApiKey = secureSettingsManager.getTextApiKey().also {
-        TextApiRuntimeConfig.updateApiKey(it)
-    }
     
     val textProvider: Flow<String> = context.dataStore.data.map { it[TEXT_PROVIDER] ?: "" }
     
-    val apiKey: kotlinx.coroutines.flow.MutableStateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow(initialTextApiKey)
+    val apiKey: kotlinx.coroutines.flow.MutableStateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow(secureSettingsManager.getTextApiKey())
     
     fun setApiKey(key: String) {
         if (key.isNotBlank()) {
@@ -78,20 +74,12 @@ class SettingsRepository(private val context: Context) {
         } else {
             secureSettingsManager.clearTextApiKey()
         }
-        val updatedKey = secureSettingsManager.getTextApiKey()
-        apiKey.value = updatedKey
-        TextApiRuntimeConfig.updateApiKey(updatedKey)
+        apiKey.value = secureSettingsManager.getTextApiKey()
     }
 
-    val baseUrl: Flow<String> = context.dataStore.data.map {
-        (it[BASE_URL] ?: "").also(TextApiRuntimeConfig::updateBaseUrl)
-    }
-    val textPath: Flow<String> = context.dataStore.data.map {
-        (it[TEXT_PATH] ?: "/chat/completions").also(TextApiRuntimeConfig::updatePath)
-    }
-    val model: Flow<String> = context.dataStore.data.map {
-        (it[MODEL] ?: "").also(TextApiRuntimeConfig::updateModel)
-    }
+    val baseUrl: Flow<String> = context.dataStore.data.map { it[BASE_URL] ?: "" }
+    val textPath: Flow<String> = context.dataStore.data.map { it[TEXT_PATH] ?: "/chat/completions" }
+    val model: Flow<String> = context.dataStore.data.map { it[MODEL] ?: "" }
     
     val savedModelsList: Flow<List<AiModelConfig>> = context.dataStore.data.map { prefs ->
         val json = prefs[SAVED_MODELS_JSON]
@@ -178,7 +166,6 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[MODEL] = modelName
         }
-        TextApiRuntimeConfig.updateModel(modelName)
     }
 
     suspend fun saveSettings(provider: String, key: String, url: String, path: String, modelName: String) {
@@ -189,9 +176,6 @@ class SettingsRepository(private val context: Context) {
             prefs[TEXT_PATH] = path
             prefs[MODEL] = modelName
         }
-        TextApiRuntimeConfig.updateBaseUrl(url)
-        TextApiRuntimeConfig.updatePath(path)
-        TextApiRuntimeConfig.updateModel(modelName)
     }
 
     suspend fun saveCreatePhotoSettings(provider: String, apiKey: String, baseUrl: String, endpoint: String, model: String, format: String) {
