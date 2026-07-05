@@ -7,9 +7,17 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.media.Image
+import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.example.chess.data.ChessSettingsRepository
@@ -27,13 +35,20 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
+    private var mediaProjectionCallback: MediaProjection.Callback? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var imageReader: ImageReader? = null
+    private var captureThread: HandlerThread? = null
+    private var captureHandler: Handler? = null
     private var overlayManager: ChessOverlayManager? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var processor: ScreenFrameProcessor? = null
     private var isCapturing = false
+    private val captureRequested = AtomicBoolean(false)
 
     companion object {
         const val ACTION_START = "ACTION_START"
@@ -70,6 +85,11 @@ class ScreenCaptureService : Service() {
         if (resultCode != -1 && resultData != null && !isCapturing) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
+            if (mediaProjection == null) {
+                ChessAssistantStatusBus.update(ChessAssistantState.Error("Izin perekaman layar tidak tersedia"))
+                stopSelf()
+                return START_NOT_STICKY
+            }
             ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
             startCapture()
         } else if (!isCapturing) {
@@ -84,90 +104,161 @@ class ScreenCaptureService : Service() {
         isCapturing = true
         serviceScope.launch {
             val settingsRepository = ChessSettingsRepository(this@ScreenCaptureService)
-            val onlineEnabled = settingsRepository.onlineEnabled.first()
-            val endpointUrl = settingsRepository.endpointUrl.first()
-            val localFallback = settingsRepository.localFallback.first()
-            val showEval = settingsRepository.showEval.first()
-            val showArrow = settingsRepository.showArrow.first()
-            val fps = settingsRepository.fps.first().coerceIn(1, 5)
-
             val engineSettings = EngineSettings(
-                onlineEnabled = onlineEnabled,
-                endpointUrl = endpointUrl,
-                localFallback = localFallback,
-                showEval = showEval,
-                showArrow = showArrow
+                onlineEnabled = settingsRepository.onlineEnabled.first(),
+                endpointUrl = settingsRepository.endpointUrl.first(),
+                localFallback = settingsRepository.localFallback.first(),
+                showEval = settingsRepository.showEval.first(),
+                showArrow = settingsRepository.showArrow.first()
             )
+            val fps = settingsRepository.fps.first().coerceIn(1, 5)
             val engine = ChessEngineFactory.createEngine(this@ScreenCaptureService, engineSettings)
             processor = ScreenFrameProcessor(engine).also { it.updateSettings(engineSettings) }
 
-            launch {
-                processor?.resultFlow?.collect { state ->
-                    withContext(Dispatchers.Main) {
-                        when (state) {
-                            is ProcessorState.Result -> {
-                                ChessAssistantStatusBus.update(
-                                    ChessAssistantState.Result(
-                                        fen = state.fen,
-                                        bestMove = state.result.bestMove,
-                                        evaluation = state.result.evaluation
-                                    )
-                                )
-                                overlayManager?.showOverlay(
-                                    bestMove = state.result.bestMove,
-                                    evaluation = if (engineSettings.showEval) state.result.evaluation else "",
-                                    depth = state.result.depth,
-                                    ponder = state.result.ponderMove.orEmpty(),
-                                    playerSide = state.lockedBottomSide,
-                                    isLocalFallback = state.result.isLocalFallback,
-                                    showArrow = engineSettings.showArrow
-                                )
-                            }
-                            is ProcessorState.WaitingForOpponent -> {
-                                ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
-                                overlayManager?.showWaiting()
-                            }
-                            is ProcessorState.Analyzing -> {
-                                ChessAssistantStatusBus.update(ChessAssistantState.Analyzing)
-                                overlayManager?.showAnalyzing()
-                            }
-                            is ProcessorState.NetworkError -> {
-                                ChessAssistantStatusBus.update(
-                                    ChessAssistantState.Error("Stockfish online tidak dapat dihubungi")
-                                )
-                                overlayManager?.showNetworkError()
-                            }
-                            is ProcessorState.Error -> {
-                                ChessAssistantStatusBus.update(ChessAssistantState.Error(state.message))
-                                overlayManager?.showError(state.message)
-                            }
-                            is ProcessorState.Idle -> {
-                                ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
-                                overlayManager?.hideOverlay()
-                            }
-                        }
-                    }
-                }
-            }
+            launch { collectProcessorState(engineSettings) }
+            withContext(Dispatchers.Main) { createVirtualDisplay() }
 
-            var toggle = true
             val frameDelayMs = 1000L / fps
             while (isActive && isCapturing) {
-                if (settingsRepository.enabled.first()) {
-                    val fen = if (toggle) {
-                        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-                    } else {
-                        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
-                    }
-                    processor?.processFrame(fen)
-                    toggle = !toggle
-                } else {
-                    ChessAssistantStatusBus.update(ChessAssistantState.Idle)
-                    overlayManager?.hideOverlay()
-                }
+                withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(true) }
+                delay(90)
+                captureRequested.set(true)
                 delay(frameDelayMs)
             }
         }
+    }
+
+    private suspend fun collectProcessorState(settings: EngineSettings) {
+        processor?.resultFlow?.collect { state ->
+            withContext(Dispatchers.Main) {
+                when (state) {
+                    is ProcessorState.Result -> {
+                        ChessAssistantStatusBus.update(
+                            ChessAssistantState.Result(
+                                fen = state.fen,
+                                bestMove = state.result.bestMove,
+                                evaluation = state.result.evaluation
+                            )
+                        )
+                        overlayManager?.showOverlay(
+                            bestMove = state.result.bestMove,
+                            evaluation = if (settings.showEval) state.result.evaluation else "",
+                            depth = state.result.depth,
+                            ponder = state.result.ponderMove.orEmpty(),
+                            isLocalFallback = state.result.isLocalFallback,
+                            showArrow = settings.showArrow,
+                            geometry = state.geometry,
+                            whiteAtBottom = state.whiteAtBottom
+                        )
+                    }
+                    is ProcessorState.WaitingForOpponent -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
+                        overlayManager?.showWaiting("Menunggu langkah lawan...", state.geometry)
+                    }
+                    is ProcessorState.WaitingForPosition -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.RecognizingPosition)
+                        overlayManager?.showWaiting(state.message, state.geometry)
+                    }
+                    is ProcessorState.SearchingBoard -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.SearchingBoard)
+                    }
+                    is ProcessorState.BoardNotFound -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.SearchingBoard)
+                        overlayManager?.showBoardNotFound()
+                    }
+                    is ProcessorState.RecognizingPosition -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.RecognizingPosition)
+                        overlayManager?.showWaiting("Membaca posisi bidak...", state.geometry)
+                    }
+                    is ProcessorState.Analyzing -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.Analyzing)
+                        overlayManager?.showAnalyzing(state.geometry)
+                    }
+                    is ProcessorState.NetworkError -> {
+                        ChessAssistantStatusBus.update(
+                            ChessAssistantState.Error("Stockfish online tidak dapat dihubungi")
+                        )
+                        overlayManager?.showNetworkError(state.geometry)
+                    }
+                    is ProcessorState.Error -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.Error(state.message))
+                        overlayManager?.showError(state.message)
+                    }
+                    is ProcessorState.Idle -> {
+                        ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
+                        overlayManager?.hideOverlay()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun createVirtualDisplay() {
+        val projection = mediaProjection ?: return
+        val metrics = resources.displayMetrics
+        val width = metrics.widthPixels
+        val height = metrics.heightPixels
+        val density = metrics.densityDpi
+
+        captureThread = HandlerThread("ChessScreenCapture").also { it.start() }
+        captureHandler = Handler(captureThread!!.looper)
+        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+
+        mediaProjectionCallback = object : MediaProjection.Callback() {
+            override fun onStop() {
+                ChessAssistantStatusBus.update(ChessAssistantState.Error("Perekaman layar dihentikan"))
+                stopSelf()
+            }
+        }.also { projection.registerCallback(it, Handler(mainLooper)) }
+
+        imageReader?.setOnImageAvailableListener({ reader ->
+            val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+            if (!captureRequested.compareAndSet(true, false)) {
+                image.close()
+                return@setOnImageAvailableListener
+            }
+
+            val bitmap = try {
+                imageToBitmap(image, width, height)
+            } catch (error: Exception) {
+                error.printStackTrace()
+                null
+            } finally {
+                image.close()
+            }
+
+            serviceScope.launch {
+                withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(false) }
+                if (bitmap != null) processor?.processFrame(bitmap)
+            }
+        }, captureHandler)
+
+        virtualDisplay = projection.createVirtualDisplay(
+            "ChessScreenAssistant",
+            width,
+            height,
+            density,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+            imageReader?.surface,
+            null,
+            captureHandler
+        )
+    }
+
+    private fun imageToBitmap(image: Image, width: Int, height: Int): Bitmap {
+        val plane = image.planes.first()
+        val buffer = plane.buffer
+        val pixelStride = plane.pixelStride
+        val rowStride = plane.rowStride
+        val rowPadding = rowStride - pixelStride * width
+        val paddedWidth = width + rowPadding / pixelStride
+        val padded = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888)
+        buffer.rewind()
+        padded.copyPixelsFromBuffer(buffer)
+        if (paddedWidth == width) return padded
+        val cropped = Bitmap.createBitmap(padded, 0, 0, width, height)
+        padded.recycle()
+        return cropped
     }
 
     private fun startCaptureForeground() {
@@ -190,7 +281,7 @@ class ScreenCaptureService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Chess Screen Assistant")
-            .setContentText("Analisis layar aktif")
+            .setContentText("Membaca papan dan menjalankan Stockfish")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setOngoing(true)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
@@ -209,12 +300,27 @@ class ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         isCapturing = false
+        captureRequested.set(false)
         processor?.stop()
         processor = null
         serviceScope.cancel()
         overlayManager?.hideOverlay()
+        virtualDisplay?.release()
+        virtualDisplay = null
+        imageReader?.close()
+        imageReader = null
+        mediaProjectionCallback?.let { callback ->
+            try {
+                mediaProjection?.unregisterCallback(callback)
+            } catch (_: Exception) {
+                // Projection may already be stopped.
+            }
+        }
         mediaProjection?.stop()
         mediaProjection = null
+        captureThread?.quitSafely()
+        captureThread = null
+        captureHandler = null
         ChessAssistantStatusBus.update(ChessAssistantState.Idle)
         super.onDestroy()
     }
