@@ -1,8 +1,10 @@
 package com.example.chess.capture
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.media.Image
 import android.os.SystemClock
+import com.example.chess.detection.BoardOrientation
 import com.example.chess.detection.ChessBoardDetector
 import com.example.chess.detection.ChessPositionTracker
 import com.example.chess.detection.PositionTrackingResult
@@ -18,7 +20,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ScreenFrameProcessor(
-    private val onBestMove: (String) -> Unit = {}
+    private val onBestMove: (String, Rect, BoardOrientation) -> Unit = { _, _, _ -> }
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val detector = ChessBoardDetector()
@@ -93,8 +95,7 @@ class ScreenFrameProcessor(
             ChessAssistantController.update(ChessAssistantState.SearchingBoard)
         }
 
-        val detection = detector.detectBoard(bitmap)
-        if (detection == null) return
+        val detection = detector.detectBoard(bitmap) ?: return
 
         if (previousState !is ChessAssistantState.Result) {
             ChessAssistantController.update(ChessAssistantState.RecognizingPosition)
@@ -128,7 +129,11 @@ class ScreenFrameProcessor(
                         boardConfidence = detection.confidence
                     )
                 )
-                onBestMove(result.bestMove)
+                onBestMove(
+                    result.bestMove,
+                    Rect(detection.bounds),
+                    detection.orientation
+                )
             }
         }
     }
