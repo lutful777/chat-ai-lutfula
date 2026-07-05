@@ -20,16 +20,17 @@ fun ChessSettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToAttribution: () -> Unit
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    
+    val scope = rememberCoroutineScope()
     val enabled by repository.enabled.collectAsState(initial = true)
     val onlineEnabled by repository.onlineEnabled.collectAsState(initial = true)
-    val endpointUrl by repository.endpointUrl.collectAsState(initial = "https://example.com/api/chess/analyze")
+    val endpointUrl by repository.endpointUrl.collectAsState(
+        initial = ChessSettingsRepository.DEFAULT_STOCKFISH_ENDPOINT
+    )
     val localFallback by repository.localFallback.collectAsState(initial = false)
     val fps by repository.fps.collectAsState(initial = 1)
     val showEval by repository.showEval.collectAsState(initial = true)
     val showArrow by repository.showArrow.collectAsState(initial = true)
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -49,95 +50,65 @@ fun ChessSettingsScreen(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Enable Feature", style = MaterialTheme.typography.bodyLarge)
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = { coroutineScope.launch { repository.updateEnabled(it) } }
-                )
+            SettingSwitch("Aktifkan fitur", enabled) {
+                scope.launch { repository.updateEnabled(it) }
             }
-            
+
             HorizontalDivider()
-            
-            Text("Stockfish Online Settings", modifier = Modifier.padding(top = 16.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
-            
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Server Stockfish online", style = MaterialTheme.typography.bodyLarge)
-                Switch(
-                    checked = onlineEnabled,
-                    onCheckedChange = { coroutineScope.launch { repository.updateOnlineEnabled(it) } }
-                )
+            Text(
+                "Stockfish online",
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            SettingSwitch("Gunakan server online", onlineEnabled) {
+                scope.launch { repository.updateOnlineEnabled(it) }
             }
-            
+
             OutlinedTextField(
                 value = endpointUrl,
-                onValueChange = { coroutineScope.launch { repository.updateEndpointUrl(it) } },
-                label = { Text("URL Endpoint") },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            )
-            
-            Row(
+                onValueChange = { value -> scope.launch { repository.updateEndpointUrl(value) } },
+                label = { Text("URL endpoint") },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Fallback lokal", style = MaterialTheme.typography.bodyLarge)
-                Switch(
-                    checked = localFallback,
-                    onCheckedChange = { coroutineScope.launch { repository.updateLocalFallback(it) } }
-                )
+                singleLine = true
+            )
+
+            SettingSwitch("Fallback lokal", localFallback) {
+                scope.launch { repository.updateLocalFallback(it) }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            
-            Text("Capture FPS: \$fps", modifier = Modifier.padding(top = 8.dp))
+            Text("Capture FPS: $fps", modifier = Modifier.padding(top = 8.dp))
             Slider(
                 value = fps.toFloat(),
-                onValueChange = { coroutineScope.launch { repository.updateFps(it.toInt()) } },
-                valueRange = 1f..5f,
-                steps = 4
+                onValueChange = { value -> scope.launch { repository.updateFps(value.toInt()) } },
+                valueRange = 1f..3f,
+                steps = 1
             )
-            
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Tampilkan evaluasi", style = MaterialTheme.typography.bodyLarge)
-                Switch(
-                    checked = showEval,
-                    onCheckedChange = { coroutineScope.launch { repository.updateShowEval(it) } }
-                )
+
+            SettingSwitch("Tampilkan evaluasi", showEval) {
+                scope.launch { repository.updateShowEval(it) }
             }
-            
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Tampilkan panah", style = MaterialTheme.typography.bodyLarge)
-                Switch(
-                    checked = showArrow,
-                    onCheckedChange = { coroutineScope.launch { repository.updateShowArrow(it) } }
-                )
+            SettingSwitch("Tampilkan panah", showArrow) {
+                scope.launch { repository.updateShowArrow(it) }
             }
-            
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-            
-            Button(
-                onClick = onNavigateToAttribution,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Button(onClick = onNavigateToAttribution, modifier = Modifier.fillMaxWidth()) {
                 Text("Lisensi & Atribusi Stockfish")
             }
         }
+    }
+}
+
+@Composable
+private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
