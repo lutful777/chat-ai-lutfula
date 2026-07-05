@@ -1,21 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Chat AI Mobile & Chess Screen Assistant
 
-# Run and deploy your AI Studio app
+## Chess Screen Assistant
 
-This contains everything you need to run your app locally.
+### Cara Mengaktifkan Fitur
+1. Buka menu samping dari halaman utama chat.
+2. Pilih "Chess Assistant".
+3. Tekan ikon "Settings" (roda gigi) untuk mengatur konfigurasi seperti batas kedalaman mesin, fps, dsb.
+4. Tekan tombol "Start" di halaman Chess Assistant.
 
-View your app in AI Studio: https://ai.studio/apps/9ecadb3b-7d8c-4404-951d-af1c625d5133
+### Izin Screen Capture
+- Aplikasi akan meminta izin (MediaProjection) untuk merekam layar.
+- Setujui dialog izin dari sistem Android.
+- Notifikasi status aktif (foreground service) akan muncul.
 
-## Run Locally
+### Cara Menghentikan Fitur
+- Tekan tombol "Stop" di dalam aplikasi pada halaman Chess Assistant, ATAU
+- Buka laci notifikasi dan tekan tombol "Stop" di notifikasi "Chess Screen Assistant".
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+### Keterbatasan Pembacaan Papan
+- Saat ini merupakan tahap MVP menggunakan metode pengenalan dummy/sederhana.
+- Posisi resolusi dan tema visual yang sangat kompleks mungkin belum terdeteksi 100%.
 
+### Informasi Mesin Catur & Lisensi
+- Menggunakan arsitektur protokol komunikasi UCI (Universal Chess Interface).
+- Silakan gunakan binari mesin catur (seperti Stockfish - GPLv3) untuk diproses melalui class `UciEngine.kt`.
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+### Privasi Data
+- Screen capture dijalankan sepenuhnya **offline dan lokal**.
+- Tidak ada data, gambar, frame, atau screenshot yang dikirim ke internet, API, atau Firebase.
+- Image buffer dihapus setiap kali frame diproses selesai dari memory.
+
+### Cara Menjalankan Pengujian
+Jalankan unit test standar atau instrumented UI test via gradle:
+`./gradlew testDebugUnitTest`

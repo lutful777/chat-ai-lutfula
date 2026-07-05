@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -29,7 +30,9 @@ import com.example.ui.settings.SettingsViewModel
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Welcome : Screen("welcome", "Welcome", Icons.AutoMirrored.Filled.Chat)
     object Chat : Screen("chat", "Chat", Icons.AutoMirrored.Filled.Chat)
+    object Chess : Screen("chess", "Chess", Icons.Filled.Visibility)
     object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
+    object ChessSettings : Screen("chess_settings", "Chess Settings", Icons.Filled.Settings)
     object Studio : Screen("studio", "AI Studio", Icons.Filled.Movie)
 }
 
@@ -84,7 +87,22 @@ fun AppNavigation() {
                 ChatScreen(
                     viewModel = chatViewModel,
                     onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
-                    onNavigateToStudio = { navController.navigate(Screen.Studio.route) }
+                    onNavigateToStudio = { navController.navigate(Screen.Studio.route) },
+                    onNavigateToChess = { navController.navigate(Screen.Chess.route) }
+                )
+            }
+            composable(Screen.Chess.route) {
+                val chessViewModel: com.example.chess.presentation.ChessAssistantViewModel = viewModel()
+                com.example.chess.presentation.ChessAssistantScreen(
+                    viewModel = chessViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToSettings = { navController.navigate(Screen.ChessSettings.route) }
+                )
+            }
+            composable(Screen.ChessSettings.route) {
+                com.example.chess.presentation.ChessSettingsScreen(
+                    repository = com.example.chess.data.ChessSettingsRepository(context),
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             composable(Screen.Settings.route) {

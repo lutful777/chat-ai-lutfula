@@ -47,7 +47,7 @@ data class ChatRequest(
 @JsonClass(generateAdapter = true)
 data class ChatMessage(
     val role: String,
-    @Json(name = "content") val rawContent: Any? = null
+    @param:Json(name = "content") val rawContent: Any? = null
 ) {
     val content: String
         get() = when (rawContent) {
