@@ -29,9 +29,18 @@ class ChessOverlayManager(context: Context) {
         if (!Settings.canDrawOverlays(appContext)) return
 
         mainHandler.post {
-            val view = overlayView ?: ChessMoveOverlayView(appContext).also {
-                overlayView = it
-                windowManager.addView(it, createLayoutParams())
+            val existing = overlayView
+            val view = if (existing != null) {
+                existing
+            } else {
+                val candidate = ChessMoveOverlayView(appContext)
+                if (runCatching {
+                        windowManager.addView(candidate, createLayoutParams())
+                    }.isFailure) {
+                    return@post
+                }
+                overlayView = candidate
+                candidate
             }
             view.updateMove(move, boardBounds, orientation)
         }
@@ -53,7 +62,8 @@ class ChessOverlayManager(context: Context) {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_SECURE,
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -190,7 +200,8 @@ private class ChessMoveOverlayView(context: Context) : View(context) {
         val top = if (preferredTop >= 10f * density) {
             preferredTop
         } else {
-            (boardBounds.bottom + 12f * density).coerceAtMost(height - cardHeight - 10f * density)
+            (boardBounds.bottom + 12f * density)
+                .coerceAtMost(height - cardHeight - 10f * density)
         }
         val left = ((width - cardWidth) / 2f).coerceAtLeast(10f * density)
         val rect = RectF(left, top, left + cardWidth, top + cardHeight)
