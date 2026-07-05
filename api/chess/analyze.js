@@ -1,7 +1,9 @@
-const stockfishFactory = require("stockfish");
+const { spawn } = require("node:child_process");
+const path = require("node:path");
+const readline = require("node:readline");
 
 const MOVETIME_MS = 3000;
-const TIMEOUT_MS = 12000;
+const TIMEOUT_MS = 15000;
 
 function validFen(fen) {
   if (typeof fen !== "string" || fen.length > 180) return false;
@@ -11,12 +13,12 @@ function validFen(fen) {
   return ranks.length === 8 && ranks.every((rank) => {
     if (!/^[prnbqkPRNBQK1-8]+$/.test(rank)) return false;
     let count = 0;
-    for (const c of rank) count += /[1-8]/.test(c) ? Number(c) : 1;
+    for (const char of rank) count += /[1-8]/.test(char) ? Number(char) : 1;
     return count === 8;
   });
 }
 
-function updateInfo(line, info) {
+function parseInfo(line, info) {
   const depth = line.match(/\bdepth\s+(\d+)/);
   const selDepth = line.match(/\bseldepth\s+(\d+)/);
   const nodes = line.match(/\bnodes\s+(\d+)/);
@@ -38,83 +40,101 @@ function updateInfo(line, info) {
   if (pv) info.principalVariation = pv[1].trim().split(/\s+/).slice(0, 8);
 }
 
-function loadEngine() {
-  return new Promise((resolve, reject) => {
-    let engine;
-    const timer = setTimeout(() => reject(new Error("Stockfish startup timeout")), TIMEOUT_MS);
-    try {
-      engine = stockfishFactory("lite-single", () => {
-        clearTimeout(timer);
-        resolve(engine);
-      });
-    } catch (error) {
-      clearTimeout(timer);
-      reject(error);
-    }
-  });
+function engineScriptPath() {
+  const packageDir = path.dirname(require.resolve("stockfish/package.json"));
+  return path.join(packageDir, "bin", "stockfish-18-lite-single.js");
 }
 
-async function analyze(fen) {
-  const engine = await loadEngine();
-  const info = {
-    evaluation: null,
-    mate: null,
-    depth: 0,
-    selDepth: 0,
-    nodes: 0,
-    principalVariation: []
-  };
-  const startedAt = Date.now();
-
-  try {
-    return await new Promise((resolve, reject) => {
-      let phase = "uci";
-      let finished = false;
-
-      const complete = (error, result) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        if (error) reject(error); else resolve(result);
-      };
-
-      const timer = setTimeout(() => {
-        engine.sendCommand("stop");
-        complete(new Error("Stockfish timeout"));
-      }, TIMEOUT_MS);
-
-      engine.listener = (rawLine) => {
-        const line = String(rawLine).trim();
-        if (line.startsWith("info ")) updateInfo(line, info);
-
-        if (phase === "uci" && line === "uciok") {
-          engine.sendCommand("setoption name Hash value 64");
-          engine.sendCommand("setoption name MultiPV value 1");
-          engine.sendCommand("setoption name Ponder value false");
-          engine.sendCommand("ucinewgame");
-          engine.sendCommand("isready");
-          phase = "ready";
-        } else if (phase === "ready" && line === "readyok") {
-          engine.sendCommand(`position fen ${fen}`);
-          engine.sendCommand(`go movetime ${MOVETIME_MS}`);
-          phase = "search";
-        } else if (phase === "search" && line.startsWith("bestmove ")) {
-          const match = line.match(/^bestmove\s+(\S+)(?:\s+ponder\s+(\S+))?/);
-          if (!match) return complete(new Error("Invalid bestmove response"));
-          complete(null, {
-            bestMove: match[1],
-            ponder: match[2] || null,
-            ...info,
-            timeMs: Date.now() - startedAt
-          });
-        }
-      };
-
-      engine.sendCommand("uci");
+function analyzeFen(fen) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [engineScriptPath()], {
+      stdio: ["pipe", "pipe", "pipe"]
     });
-  } finally {
-    try { engine.sendCommand("quit"); } catch (_) {}
-  }
+    const info = {
+      evaluation: null,
+      mate: null,
+      depth: 0,
+      selDepth: 0,
+      nodes: 0,
+      principalVariation: []
+    };
+    const startedAt = Date.now();
+    let phase = "uci";
+    let finished = false;
+    let stderr = "";
+
+    const finish = (error, result) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      stdout.close();
+      try { child.stdin.write("quit\n"); } catch (_) {}
+      setTimeout(() => {
+        if (!child.killed) child.kill("SIGKILL");
+      }, 250).unref();
+      if (error) reject(error); else resolve(result);
+    };
+
+    const send = (command) => {
+      if (!finished && child.stdin.writable) child.stdin.write(`${command}\n`);
+    };
+
+    const timer = setTimeout(() => {
+      send("stop");
+      finish(new Error(`Stockfish timeout${stderr ? `: ${stderr.slice(-300)}` : ""}`));
+    }, TIMEOUT_MS);
+
+    const stdout = readline.createInterface({ input: child.stdout });
+    stdout.on("line", (rawLine) => {
+      const line = rawLine.trim();
+      if (!line) return;
+      if (line.startsWith("info ")) parseInfo(line, info);
+
+      if (phase === "uci" && line === "uciok") {
+        send("setoption name Hash value 64");
+        send("setoption name MultiPV value 1");
+        send("setoption name Ponder value false");
+        send("ucinewgame");
+        send("isready");
+        phase = "ready";
+        return;
+      }
+
+      if (phase === "ready" && line === "readyok") {
+        send(`position fen ${fen}`);
+        send(`go movetime ${MOVETIME_MS}`);
+        phase = "search";
+        return;
+      }
+
+      if (phase === "search" && line.startsWith("bestmove ")) {
+        const match = line.match(/^bestmove\s+(\S+)(?:\s+ponder\s+(\S+))?/);
+        if (!match) {
+          finish(new Error("Invalid bestmove response"));
+          return;
+        }
+        finish(null, {
+          bestMove: match[1],
+          ponder: match[2] || null,
+          ...info,
+          timeMs: Date.now() - startedAt
+        });
+      }
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.once("error", (error) => finish(error));
+    child.once("exit", (code, signal) => {
+      if (!finished) {
+        finish(new Error(`Stockfish exited before bestmove (code=${code}, signal=${signal})${stderr ? `: ${stderr.slice(-300)}` : ""}`));
+      }
+    });
+
+    send("uci");
+  });
 }
 
 module.exports = async function handler(req, res) {
@@ -129,7 +149,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const result = await analyze(fen.trim());
+    const result = await analyzeFen(fen.trim());
     return res.status(200).json({
       requestId,
       fen: fen.trim(),
