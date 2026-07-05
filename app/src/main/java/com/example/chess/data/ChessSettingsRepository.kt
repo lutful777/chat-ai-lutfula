@@ -18,13 +18,18 @@ class ChessSettingsRepository(private val context: Context) {
         val FPS = intPreferencesKey("fps")
         val SHOW_EVAL = booleanPreferencesKey("show_eval")
         val SHOW_ARROW = booleanPreferencesKey("show_arrow")
+
+        private val LEGACY_ENDPOINTS = setOf(
+            "https://example.com/api/chess/analyze",
+            "https://chat-ai-lutfula.vercel.app/api/chess/analyze"
+        )
     }
 
     val enabled: Flow<Boolean> = context.chessDataStore.data.map { it[ENABLED] ?: true }
     val onlineEnabled: Flow<Boolean> = context.chessDataStore.data.map { it[ONLINE_ENABLED] ?: true }
     val endpointUrl: Flow<String> = context.chessDataStore.data.map { preferences ->
-        val savedUrl = preferences[ENDPOINT_URL]
-        if (savedUrl.isNullOrBlank() || savedUrl == "https://example.com/api/chess/analyze") {
+        val savedUrl = preferences[ENDPOINT_URL]?.trim()
+        if (savedUrl.isNullOrBlank() || savedUrl in LEGACY_ENDPOINTS) {
             ChessApiConfig.DEFAULT_ENDPOINT_URL
         } else {
             savedUrl
