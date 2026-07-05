@@ -127,13 +127,23 @@ class ScreenCaptureService : Service() {
             engineDepth = settings.depth,
             minimumConfidence = settings.minimumConfidence,
             showEvaluation = settings.showEvaluation,
-            onBestMove = { move, bounds, orientation ->
-                updateNotification("Langkah terbaik: $move")
+            onBestMove = { move, bounds, orientation, frameWidth, frameHeight ->
+                updateNotification("Arahan sisi bawah: $move")
                 if (settings.showArrow) {
-                    overlayManager?.showMove(move, bounds, orientation)
+                    overlayManager?.showMove(
+                        move = move,
+                        boardBounds = bounds,
+                        orientation = orientation,
+                        frameWidth = frameWidth,
+                        frameHeight = frameHeight
+                    )
                 } else {
                     overlayManager?.hide()
                 }
+            },
+            onWaitingForOpponent = {
+                overlayManager?.hide()
+                updateNotification("Menunggu langkah sisi atas…")
             },
             onBoardLost = {
                 overlayManager?.hide()
@@ -179,7 +189,7 @@ class ScreenCaptureService : Service() {
 
         isRunning = true
         ChessAssistantController.update(ChessAssistantState.SearchingBoard)
-        updateNotification("Membaca papan catur dari layar")
+        updateNotification("Membaca papan; arahan hanya untuk sisi bawah")
     }
 
     private fun readResultData(intent: Intent): Intent? {
