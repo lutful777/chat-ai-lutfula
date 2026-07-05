@@ -29,7 +29,10 @@ class ChessSettingsRepository(private val context: Context) {
     val onlineEnabled: Flow<Boolean> = context.chessDataStore.data.map { it[ONLINE_ENABLED] ?: true }
     val endpointUrl: Flow<String> = context.chessDataStore.data.map {
         it[ENDPOINT_URL]
-            ?.takeIf { value -> value.startsWith("https://") }
+            ?.trim()
+            ?.takeIf { value ->
+                value.startsWith("https://") && !value.contains("example.com", ignoreCase = true)
+            }
             ?: DEFAULT_STOCKFISH_ENDPOINT
     }
     val localFallback: Flow<Boolean> = context.chessDataStore.data.map { it[LOCAL_FALLBACK] ?: false }
