@@ -34,6 +34,7 @@ sealed interface ChessAssistantState {
     data object SearchingBoard : ChessAssistantState
     data object RecognizingPosition : ChessAssistantState
     data object Analyzing : ChessAssistantState
+    data class Waiting(val message: String) : ChessAssistantState
 
     data class Result(
         val fen: String,
