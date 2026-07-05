@@ -65,4 +65,5 @@ function validate() {
   );
 
   console.log(JSON.stringify(report, null, 2));
+  if (!passed) process.exitCode = 1;
 })();
