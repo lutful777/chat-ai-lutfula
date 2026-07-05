@@ -1,0 +1,58 @@
+name: Railway Docker CI
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "Dockerfile.railway"
+      - "railway.toml"
+      - "server.js"
+      - "api/chess/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/railway-docker.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "Dockerfile.railway"
+      - "railway.toml"
+      - "server.js"
+      - "api/chess/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/railway-docker.yml"
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Railway image
+        run: docker build -f Dockerfile.railway -t stockfish-railway .
+
+      - name: Run Railway image
+        run: docker run -d --name stockfish-railway-test -e PORT=10000 -p 10000:10000 stockfish-railway
+
+      - name: Test health and analysis endpoints
+        run: |
+          trap 'docker logs stockfish-railway-test; docker rm -f stockfish-railway-test' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:10000/healthz > /tmp/health.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          cat /tmp/health.json
+
+          RESPONSE=$(curl --fail --silent \
+            -H 'Content-Type: application/json' \
+            -d '{"requestId":"railway-ci","fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","movetimeMs":200}' \
+            http://127.0.0.1:10000/api/chess/analyze)
+
+          echo "$RESPONSE"
+          RESPONSE="$RESPONSE" node -e 'const data = JSON.parse(process.env.RESPONSE); if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(data.bestMove || "")) process.exit(1);'
