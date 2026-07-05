@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
-import android.provider.Settings
+import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -76,7 +76,7 @@ fun ChessAssistantScreen(
     val overlayLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
-        if (Settings.canDrawOverlays(context)) {
+        if (AndroidSettings.canDrawOverlays(context)) {
             projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
         } else {
             viewModel.onPermissionDenied("Izin tampil di atas aplikasi lain diperlukan agar panah terlihat")
@@ -147,11 +147,11 @@ fun ChessAssistantScreen(
                 Button(
                     onClick = {
                         viewModel.startCapture()
-                        if (Settings.canDrawOverlays(context)) {
+                        if (AndroidSettings.canDrawOverlays(context)) {
                             projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
                         } else {
                             val overlayIntent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                 Uri.parse("package:${context.packageName}")
                             )
                             overlayLauncher.launch(overlayIntent)
