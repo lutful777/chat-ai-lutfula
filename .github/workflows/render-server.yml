@@ -1,0 +1,66 @@
+name: Render Stockfish CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "api/chess/**"
+      - "server.js"
+      - "package.json"
+      - "package-lock.json"
+      - "render.yaml"
+      - ".github/workflows/render-server.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "api/chess/**"
+      - "server.js"
+      - "package.json"
+      - "package-lock.json"
+      - "render.yaml"
+      - ".github/workflows/render-server.yml"
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check JavaScript syntax
+        run: npm run check
+
+      - name: Start server and test Stockfish API
+        env:
+          PORT: "10000"
+        run: |
+          npm start > server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true; cat server.log' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:10000/healthz > /tmp/health.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          cat /tmp/health.json
+
+          RESPONSE=$(curl --fail --silent \
+            -H 'Content-Type: application/json' \
+            -d '{"requestId":"ci-smoke-test","fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","movetimeMs":200}' \
+            http://127.0.0.1:10000/api/chess/analyze)
+
+          echo "$RESPONSE"
+          RESPONSE="$RESPONSE" node -e 'const data = JSON.parse(process.env.RESPONSE); if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(data.bestMove || "")) process.exit(1);'
