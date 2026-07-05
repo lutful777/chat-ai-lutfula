@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.view.View
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.sin
 
 class ArrowView(context: Context) : View(context) {
@@ -16,9 +17,10 @@ class ArrowView(context: Context) : View(context) {
     private var endX = 0f
     private var endY = 0f
     private var isDrawing = false
+    private var arrowSize = 40f
 
     private val paint = Paint().apply {
-        color = Color.parseColor("#80FF0000") // Semi-transparent red
+        color = Color.parseColor("#CC24C56E")
         strokeWidth = 15f
         style = Paint.Style.STROKE
         isAntiAlias = true
@@ -26,17 +28,20 @@ class ArrowView(context: Context) : View(context) {
     }
 
     private val arrowPaint = Paint().apply {
-        color = Color.parseColor("#80FF0000")
+        color = Color.parseColor("#CC24C56E")
         style = Paint.Style.FILL
         isAntiAlias = true
     }
 
-    fun setArrow(sx: Float, sy: Float, ex: Float, ey: Float) {
+    fun setArrow(sx: Float, sy: Float, ex: Float, ey: Float, squareSize: Float) {
         startX = sx
         startY = sy
         endX = ex
         endY = ey
+        paint.strokeWidth = max(8f, squareSize * 0.16f)
+        arrowSize = max(24f, squareSize * 0.42f)
         isDrawing = true
+        visibility = VISIBLE
         invalidate()
     }
 
@@ -52,20 +57,19 @@ class ArrowView(context: Context) : View(context) {
         canvas.drawLine(startX, startY, endX, endY, paint)
 
         val angle = atan2((endY - startY).toDouble(), (endX - startX).toDouble())
-        val arrowSize = 40.0
+        val head = arrowSize.toDouble()
         val arrowAngle = Math.PI / 6.0
+        val x1 = endX - head * cos(angle - arrowAngle)
+        val y1 = endY - head * sin(angle - arrowAngle)
+        val x2 = endX - head * cos(angle + arrowAngle)
+        val y2 = endY - head * sin(angle + arrowAngle)
 
-        val x1 = endX - arrowSize * cos(angle - arrowAngle)
-        val y1 = endY - arrowSize * sin(angle - arrowAngle)
-        val x2 = endX - arrowSize * cos(angle + arrowAngle)
-        val y2 = endY - arrowSize * sin(angle + arrowAngle)
-
-        val path = Path()
-        path.moveTo(endX, endY)
-        path.lineTo(x1.toFloat(), y1.toFloat())
-        path.lineTo(x2.toFloat(), y2.toFloat())
-        path.close()
-
+        val path = Path().apply {
+            moveTo(endX, endY)
+            lineTo(x1.toFloat(), y1.toFloat())
+            lineTo(x2.toFloat(), y2.toFloat())
+            close()
+        }
         canvas.drawPath(path, arrowPaint)
     }
 }
