@@ -12,7 +12,7 @@ on:
       - "package-lock.json"
       - ".github/workflows/railway-docker.yml"
   push:
-    branches: ["main"]
+    branches: ["main", "railway-config"]
     paths:
       - "Dockerfile.railway"
       - "railway.toml"
