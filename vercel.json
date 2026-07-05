@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/chess/analyze.js": {
+      "maxDuration": 15
+    }
+  }
+}
