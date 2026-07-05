@@ -25,24 +25,30 @@ class ChessOverlayManager(context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var overlayView: ChessMoveOverlayView? = null
 
-    fun showMove(move: String, boardBounds: Rect, orientation: BoardOrientation) {
+    fun showMove(
+        move: String,
+        boardBounds: Rect,
+        orientation: BoardOrientation,
+        frameWidth: Int,
+        frameHeight: Int
+    ) {
         if (!Settings.canDrawOverlays(appContext)) return
 
         mainHandler.post {
-            val existing = overlayView
-            val view = if (existing != null) {
-                existing
-            } else {
-                val candidate = ChessMoveOverlayView(appContext)
-                if (runCatching {
-                        windowManager.addView(candidate, createLayoutParams())
-                    }.isFailure) {
-                    return@post
-                }
+            val view = overlayView ?: ChessMoveOverlayView(appContext).also { candidate ->
+                val added = runCatching {
+                    windowManager.addView(candidate, createLayoutParams())
+                }.isSuccess
+                if (!added) return@post
                 overlayView = candidate
-                candidate
             }
-            view.updateMove(move, boardBounds, orientation)
+            view.updateMove(
+                move = move,
+                boardBounds = boardBounds,
+                orientation = orientation,
+                frameWidth = frameWidth,
+                frameHeight = frameHeight
+            )
         }
     }
 
@@ -86,12 +92,12 @@ private class ChessMoveOverlayView(context: Context) : View(context) {
         setShadowLayer(5f * density, 0f, 2f * density, Color.BLACK)
     }
     private val startPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(210, 255, 255, 255)
+        color = Color.argb(220, 255, 255, 255)
         style = Paint.Style.STROKE
         strokeWidth = 4f * density
     }
     private val destinationPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(220, 255, 193, 7)
+        color = Color.argb(215, 255, 193, 7)
         style = Paint.Style.FILL
     }
     private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -105,41 +111,65 @@ private class ChessMoveOverlayView(context: Context) : View(context) {
     }
 
     private var move: String = ""
-    private var boardBounds = Rect()
+    private var sourceBoardBounds = Rect()
     private var orientation = BoardOrientation.WHITE_BOTTOM
+    private var sourceFrameWidth = 1
+    private var sourceFrameHeight = 1
 
     init {
         setLayerType(LAYER_TYPE_SOFTWARE, null)
     }
 
-    fun updateMove(move: String, boardBounds: Rect, orientation: BoardOrientation) {
+    fun updateMove(
+        move: String,
+        boardBounds: Rect,
+        orientation: BoardOrientation,
+        frameWidth: Int,
+        frameHeight: Int
+    ) {
         this.move = move.lowercase()
-        this.boardBounds = Rect(boardBounds)
+        sourceBoardBounds = Rect(boardBounds)
         this.orientation = orientation
+        sourceFrameWidth = frameWidth.coerceAtLeast(1)
+        sourceFrameHeight = frameHeight.coerceAtLeast(1)
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (move.length < 4 || boardBounds.width() <= 0 || boardBounds.height() <= 0) return
+        if (move.length < 4 || width <= 0 || height <= 0) return
 
-        val from = squareCenter(move.substring(0, 2)) ?: return
-        val to = squareCenter(move.substring(2, 4)) ?: return
+        val boardBounds = scaledBoardBounds()
+        if (boardBounds.width() <= 0f || boardBounds.height() <= 0f) return
+
+        val from = squareCenter(move.substring(0, 2), boardBounds) ?: return
+        val to = squareCenter(move.substring(2, 4), boardBounds) ?: return
 
         val startX = from.first
         val startY = from.second
         val endX = to.first
         val endY = to.second
-        val squareSize = boardBounds.width() / 8f
+        val squareSize = minOf(boardBounds.width(), boardBounds.height()) / 8f
 
         canvas.drawCircle(startX, startY, squareSize * 0.25f, startPaint)
         canvas.drawCircle(endX, endY, squareSize * 0.24f, destinationPaint)
         canvas.drawLine(startX, startY, endX, endY, arrowPaint)
         drawArrowHead(canvas, startX, startY, endX, endY, squareSize)
-        drawInstructionCard(canvas)
+        drawInstructionCard(canvas, boardBounds)
     }
 
-    private fun squareCenter(square: String): Pair<Float, Float>? {
+    private fun scaledBoardBounds(): RectF {
+        val scaleX = width.toFloat() / sourceFrameWidth.toFloat()
+        val scaleY = height.toFloat() / sourceFrameHeight.toFloat()
+        return RectF(
+            sourceBoardBounds.left * scaleX,
+            sourceBoardBounds.top * scaleY,
+            sourceBoardBounds.right * scaleX,
+            sourceBoardBounds.bottom * scaleY
+        )
+    }
+
+    private fun squareCenter(square: String, boardBounds: RectF): Pair<Float, Float>? {
         if (square.length != 2) return null
         val file = square[0] - 'a'
         val rank = square[1].digitToIntOrNull() ?: return null
@@ -171,8 +201,11 @@ private class ChessMoveOverlayView(context: Context) : View(context) {
         endY: Float,
         squareSize: Float
     ) {
-        val angle = atan2((endY - startY).toDouble(), (endX - startX).toDouble())
-        val headLength = squareSize * 0.34f
+        val angle = atan2(
+            (endY - startY).toDouble(),
+            (endX - startX).toDouble()
+        )
+        val headLength = (squareSize * 0.34f).toDouble()
         val spread = Math.toRadians(28.0)
 
         val leftX = endX - (headLength * cos(angle - spread)).toFloat()
@@ -188,12 +221,14 @@ private class ChessMoveOverlayView(context: Context) : View(context) {
         canvas.drawPath(path, arrowPaint)
     }
 
-    private fun drawInstructionCard(canvas: Canvas) {
-        val label = "Saran: ${move.substring(0, 2).uppercase()}  →  ${move.substring(2, 4).uppercase()}"
+    private fun drawInstructionCard(canvas: Canvas, boardBounds: RectF) {
+        val label = "Saran sisi bawah: ${move.substring(0, 2).uppercase()} → " +
+            move.substring(2, 4).uppercase()
         val horizontalPadding = 18f * density
         val verticalPadding = 12f * density
         val textWidth = textPaint.measureText(label)
-        val cardWidth = textWidth + horizontalPadding * 2
+        val maxCardWidth = width - 20f * density
+        val cardWidth = (textWidth + horizontalPadding * 2).coerceAtMost(maxCardWidth)
         val cardHeight = textPaint.textSize + verticalPadding * 2
 
         val preferredTop = boardBounds.top - cardHeight - 12f * density
@@ -202,6 +237,7 @@ private class ChessMoveOverlayView(context: Context) : View(context) {
         } else {
             (boardBounds.bottom + 12f * density)
                 .coerceAtMost(height - cardHeight - 10f * density)
+                .coerceAtLeast(10f * density)
         }
         val left = ((width - cardWidth) / 2f).coerceAtLeast(10f * density)
         val rect = RectF(left, top, left + cardWidth, top + cardHeight)
