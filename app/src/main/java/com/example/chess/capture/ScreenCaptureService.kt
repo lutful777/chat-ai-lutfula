@@ -67,25 +67,27 @@ class ScreenCaptureService : Service() {
         overlayManager = ChessOverlayManager(this)
         captureThread = HandlerThread("ChessScreenCapture").also { it.start() }
         captureHandler = Handler(captureThread!!.looper)
-        startForegroundCompat("Menunggu izin pembacaan layar…")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopCapture(stopService = true)
+
             ACTION_START -> {
                 if (!Settings.canDrawOverlays(this)) {
-                    updateNotification("Aktifkan izin tampil di atas aplikasi lain")
-                    stopCapture(stopService = true)
+                    stopSelf()
                     return START_NOT_STICKY
                 }
 
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 val resultData = readResultData(intent)
                 if (resultCode == 0 || resultData == null) {
-                    updateNotification("Izin pembacaan layar tidak valid")
-                    stopCapture(stopService = true)
-                } else if (!isCapturing) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+
+                if (!isCapturing) {
+                    startForegroundCompat("Mempersiapkan Stockfish dan pembacaan papan…")
                     startCapture(resultCode, resultData)
                 }
             }
