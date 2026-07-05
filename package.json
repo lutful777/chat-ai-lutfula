@@ -1,0 +1,11 @@
+{
+  "name": "chat-ai-lutfula-functions",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "stockfish": "18.0.8"
+  }
+}
