@@ -1,3 +1,5 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const handler = require("../api/chess/analyze.js");
 
 const req = {
@@ -22,10 +24,7 @@ const res = {
   }
 };
 
-(async () => {
-  await handler(req, res);
-  console.log(JSON.stringify({ statusCode, payload }, null, 2));
-
+function validate() {
   if (statusCode !== 200) throw new Error(`Expected HTTP 200, got ${statusCode}`);
   if (payload.movetimeMs !== 3000) throw new Error("movetimeMs must be 3000");
   if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(payload.bestMove || "")) {
@@ -36,7 +35,34 @@ const res = {
   if (!Number.isFinite(payload.timeMs) || payload.timeMs < 2500) {
     throw new Error(`Stockfish stopped too early: ${payload.timeMs}ms`);
   }
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+}
+
+(async () => {
+  let passed = false;
+  let error = null;
+
+  try {
+    await handler(req, res);
+    validate();
+    passed = true;
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : String(caught);
+  }
+
+  const report = {
+    passed,
+    statusCode,
+    payload: payload || null,
+    error,
+    generatedAt: new Date().toISOString()
+  };
+
+  const outputDir = path.join(__dirname, "..", "public");
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(outputDir, "stockfish-smoke.json"),
+    JSON.stringify(report, null, 2)
+  );
+
+  console.log(JSON.stringify(report, null, 2));
+})();
