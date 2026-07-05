@@ -29,7 +29,12 @@ jobs:
     - name: Remove Corrupt Gradle Wrapper
       run: rm -f gradle/wrapper/gradle-wrapper.jar
     - name: Test and build with Gradle
-      run: gradle clean testDebugUnitTest assembleDebug --stacktrace --no-configuration-cache --no-daemon
+      run: |
+        if ! gradle clean testDebugUnitTest assembleDebug --stacktrace --no-configuration-cache --no-daemon > gradle-build.log 2>&1; then
+          tail -n 220 gradle-build.log
+          exit 1
+        fi
+        tail -n 40 gradle-build.log
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
