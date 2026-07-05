@@ -2,34 +2,71 @@
 
 ## Chess Screen Assistant
 
-### Cara Mengaktifkan Fitur
-1. Buka menu samping dari halaman utama chat.
-2. Pilih "Chess Assistant".
-3. Tekan ikon "Settings" (roda gigi) untuk mengatur konfigurasi seperti batas kedalaman mesin, fps, dsb.
-4. Tekan tombol "Start" di halaman Chess Assistant.
+Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProjection. Pengguna harus memberi izin terlebih dahulu, lalu aplikasi memproses frame secara lokal sekitar satu kali per detik.
 
-### Izin Screen Capture
-- Aplikasi akan meminta izin (MediaProjection) untuk merekam layar.
-- Setujui dialog izin dari sistem Android.
-- Notifikasi status aktif (foreground service) akan muncul.
+### Cara menggunakan
 
-### Cara Menghentikan Fitur
-- Tekan tombol "Stop" di dalam aplikasi pada halaman Chess Assistant, ATAU
-- Buka laci notifikasi dan tekan tombol "Stop" di notifikasi "Chess Screen Assistant".
+1. Buka menu samping dan pilih **Chess Assistant**.
+2. Tekan **Mulai Membaca Layar**.
+3. Berikan izin **Tampil di atas aplikasi lain** agar panah dapat muncul.
+4. Setujui dialog perekaman layar Android.
+5. Pada Android yang mendukung berbagi satu aplikasi, pilih aplikasi catur yang ingin dibaca.
+6. Buka papan catur pada posisi awal standar dan tampilkan seluruh papan.
+7. Bidak yang terlihat di bagian bawah papan otomatis dianggap sebagai bidak pengguna, tanpa perlu memilih warna.
+8. Panah hanya muncul ketika sisi bawah mendapat giliran.
+9. Saat sisi atas mendapat giliran, panah disembunyikan dan aplikasi menampilkan status menunggu lawan.
+10. Tekan **Stop** dari aplikasi atau notifikasi setelah selesai.
 
-### Keterbatasan Pembacaan Papan
-- Saat ini merupakan tahap MVP menggunakan metode pengenalan dummy/sederhana.
-- Posisi resolusi dan tema visual yang sangat kompleks mungkin belum terdeteksi 100%.
+### Cara kerja
 
-### Informasi Mesin Catur & Lisensi
-- Menggunakan arsitektur protokol komunikasi UCI (Universal Chess Interface).
-- Silakan gunakan binari mesin catur (seperti Stockfish - GPLv3) untuk diproses melalui class `UciEngine.kt`.
+- `MediaProjection` dan `ImageReader` mengambil frame layar.
+- Frame diproses lokal dan tidak disimpan ke galeri.
+- Aplikasi mencari pola papan 8×8 dan mendeteksi petak yang terisi.
+- Identitas bidak dipertahankan dari riwayat langkah sejak posisi awal.
+- Orientasi papan dikunci selama satu sesi.
+- Posisi diubah menjadi FEN.
+- Giliran pada FEN dibandingkan dengan sisi yang berada di bawah papan.
+- Mesin hanya menganalisis ketika sisi bawah mendapat giliran.
+- Koordinat langkah dipetakan ke posisi papan lalu digambar sebagai panah overlay.
+- Kedalaman efektif mesin lokal dibatasi hingga 3 agar penggunaan CPU tetap aman.
 
-### Privasi Data
-- Screen capture dijalankan sepenuhnya **offline dan lokal**.
-- Tidak ada data, gambar, frame, atau screenshot yang dikirim ke internet, API, atau Firebase.
-- Image buffer dihapus setiap kali frame diproses selesai dari memory.
+### Petunjuk visual
 
-### Cara Menjalankan Pengujian
-Jalankan unit test standar atau instrumented UI test via gradle:
-`./gradlew testDebugUnitTest`
+- Lingkaran tipis menandai petak asal.
+- Lingkaran terisi menandai petak tujuan.
+- Panah menunjukkan arah gerakan.
+- Kartu kecil menampilkan format seperti **C2 → C4**.
+- Overlay tidak menerima sentuhan dan tidak menggerakkan bidak secara otomatis.
+- Posisi panah diskalakan dari ukuran frame hasil screen capture ke ukuran layar overlay.
+
+### Privasi
+
+- Pembacaan layar hanya dimulai setelah izin Android diberikan.
+- Notifikasi foreground tetap aktif selama proses berjalan.
+- Frame diproses di perangkat dan tidak dikirim ke Gemini, Firebase, server, atau API lain.
+- Bitmap dilepas dari memori setelah pemrosesan.
+- Aplikasi tidak memakai AccessibilityService, tap otomatis, swipe otomatis, atau pemindahan bidak otomatis.
+
+### Keterbatasan
+
+- Sesi harus dimulai dari posisi awal catur standar.
+- Papan harus terlihat penuh, lurus, dan tidak tertutup menu atau animasi.
+- Tema papan harus mempunyai dua warna petak yang cukup berbeda.
+- Orientasi papan tidak boleh berubah selama satu sesi.
+- Posisi panah bergantung pada ketepatan deteksi batas papan.
+- Mesin lokal bawaan merupakan mesin ringan, bukan pengganti Stockfish.
+
+### Pengujian
+
+```bash
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+```
+
+CI menjalankan unit test dan build APK pada setiap perubahan pull request.
+
+### Menjalankan aplikasi
+
+1. Buka proyek dengan Android Studio.
+2. Siapkan `.env` mengikuti `.env.example` untuk fitur chat utama.
+3. Jalankan aplikasi pada emulator atau perangkat Android.
