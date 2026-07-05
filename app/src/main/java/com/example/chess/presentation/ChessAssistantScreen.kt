@@ -120,7 +120,8 @@ fun ChessAssistantScreen(
 
         if (showArrow &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            !AndroidSettings.canDrawOverlays(context)) {
+            !AndroidSettings.canDrawOverlays(context)
+        ) {
             continueAfterOverlayPermission = true
             val intent = Intent(
                 AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -169,17 +170,17 @@ fun ChessAssistantScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Pembacaan Layar dan Panah Langkah",
+                text = "Arahan Hanya untuk Sisi Bawah",
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = if (showArrow) {
-                    "Tekan Mulai, berikan izin tampil di atas aplikasi lain dan izin perekaman layar, " +
-                        "lalu buka aplikasi catur. Panah akan menunjukkan petak asal dan tujuan."
+                    "Bidak yang berada di bagian bawah papan dianggap sebagai bidak Anda. " +
+                        "Panah hanya muncul saat giliran sisi bawah dan disembunyikan saat giliran sisi atas."
                 } else {
-                    "Tekan Mulai, izinkan perekaman layar, lalu buka aplikasi catur. " +
-                        "Petunjuk langkah akan tampil di notifikasi dan halaman ini."
+                    "Bidak yang berada di bagian bawah papan dianggap sebagai bidak Anda. " +
+                        "Petunjuk hanya muncul saat giliran sisi bawah."
                 },
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -209,14 +210,14 @@ fun ChessAssistantScreen(
                 ChessAssistantState.Analyzing -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Menghitung langkah terbaik…")
+                    Text("Menghitung arahan untuk sisi bawah…")
                 }
                 is ChessAssistantState.Waiting -> Text(currentState.message)
                 is ChessAssistantState.Result -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = "Langkah terbaik: ${currentState.bestMove}",
+                                text = "Arahan sisi bawah: ${currentState.bestMove}",
                                 style = MaterialTheme.typography.titleLarge
                             )
                             Text("Petunjuk: ${formatMove(currentState.bestMove)}")
