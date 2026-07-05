@@ -12,9 +12,10 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 4. Setujui dialog perekaman layar Android.
 5. Pada Android yang mendukung berbagi satu aplikasi, pilih aplikasi catur yang ingin dibaca.
 6. Buka papan catur pada posisi awal standar dan tampilkan seluruh papan.
-7. Tunggu panah dan kartu petunjuk muncul di atas papan.
-8. Mainkan langkah secara manual; rekomendasi akan diperbarui saat posisi berubah.
-9. Tekan **Stop** dari aplikasi atau notifikasi setelah selesai.
+7. Bidak yang terlihat di bagian bawah papan otomatis dianggap sebagai bidak pengguna, tanpa perlu memilih warna.
+8. Panah hanya muncul ketika sisi bawah mendapat giliran.
+9. Saat sisi atas mendapat giliran, panah disembunyikan dan aplikasi menampilkan status menunggu lawan.
+10. Tekan **Stop** dari aplikasi atau notifikasi setelah selesai.
 
 ### Cara kerja
 
@@ -22,8 +23,10 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 - Frame diproses lokal dan tidak disimpan ke galeri.
 - Aplikasi mencari pola papan 8×8 dan mendeteksi petak yang terisi.
 - Identitas bidak dipertahankan dari riwayat langkah sejak posisi awal.
+- Orientasi papan dikunci selama satu sesi.
 - Posisi diubah menjadi FEN.
-- Mesin catur Kotlin lokal menghitung saran langkah dengan pencarian alpha-beta.
+- Giliran pada FEN dibandingkan dengan sisi yang berada di bawah papan.
+- Mesin hanya menganalisis ketika sisi bawah mendapat giliran.
 - Koordinat langkah dipetakan ke posisi papan lalu digambar sebagai panah overlay.
 - Kedalaman efektif mesin lokal dibatasi hingga 3 agar penggunaan CPU tetap aman.
 
@@ -34,6 +37,7 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 - Panah menunjukkan arah gerakan.
 - Kartu kecil menampilkan format seperti **C2 → C4**.
 - Overlay tidak menerima sentuhan dan tidak menggerakkan bidak secara otomatis.
+- Posisi panah diskalakan dari ukuran frame hasil screen capture ke ukuran layar overlay.
 
 ### Privasi
 
@@ -48,7 +52,7 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 - Sesi harus dimulai dari posisi awal catur standar.
 - Papan harus terlihat penuh, lurus, dan tidak tertutup menu atau animasi.
 - Tema papan harus mempunyai dua warna petak yang cukup berbeda.
-- Orientasi papan sebaiknya tidak berubah selama satu sesi.
+- Orientasi papan tidak boleh berubah selama satu sesi.
 - Posisi panah bergantung pada ketepatan deteksi batas papan.
 - Mesin lokal bawaan merupakan mesin ringan, bukan pengganti Stockfish.
 
@@ -58,6 +62,8 @@ Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProje
 ./gradlew testDebugUnitTest
 ./gradlew assembleDebug
 ```
+
+CI menjalankan unit test dan build APK pada setiap perubahan pull request.
 
 ### Menjalankan aplikasi
 
