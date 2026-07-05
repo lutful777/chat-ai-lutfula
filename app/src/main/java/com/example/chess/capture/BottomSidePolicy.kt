@@ -16,9 +16,4 @@ object BottomSidePolicy {
         }
         return activeColor == bottomColor
     }
-
-    fun bottomSideName(orientation: BoardOrientation): String = when (orientation) {
-        BoardOrientation.WHITE_BOTTOM -> "sisi bawah"
-        BoardOrientation.BLACK_BOTTOM -> "sisi bawah"
-    }
 }
