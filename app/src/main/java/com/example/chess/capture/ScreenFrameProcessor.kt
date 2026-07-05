@@ -20,18 +20,26 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ScreenFrameProcessor(
-    private val onBestMove: (String, Rect, BoardOrientation) -> Unit = { _, _, _ -> }
+    framesPerSecond: Int,
+    engineDepth: Int,
+    private val minimumConfidence: Float,
+    private val showEvaluation: Boolean,
+    private val onBestMove: (String, Rect, BoardOrientation) -> Unit = { _, _, _ -> },
+    private val onBoardLost: () -> Unit = {}
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val detector = ChessBoardDetector()
     private val tracker = ChessPositionTracker()
     private val engine: ChessEngine = SimpleChessEngine()
     private val processing = AtomicBoolean(false)
+    private val frameIntervalMs = 1_000L / framesPerSecond.coerceIn(1, 3)
+    private val analysisDepth = engineDepth.coerceIn(1, 3)
 
     @Volatile
     private var closed = false
 
     private var lastAcceptedFrameAt = 0L
+    private var missingBoardFrames = 0
 
     fun submit(image: Image) {
         if (closed) {
@@ -40,7 +48,7 @@ class ScreenFrameProcessor(
         }
 
         val now = SystemClock.elapsedRealtime()
-        if (now - lastAcceptedFrameAt < FRAME_INTERVAL_MS ||
+        if (now - lastAcceptedFrameAt < frameIntervalMs ||
             !processing.compareAndSet(false, true)) {
             image.close()
             return
@@ -95,7 +103,18 @@ class ScreenFrameProcessor(
             ChessAssistantController.update(ChessAssistantState.SearchingBoard)
         }
 
-        val detection = detector.detectBoard(bitmap) ?: return
+        val detection = detector.detectBoard(bitmap)
+        if (detection == null || detection.confidence < minimumConfidence) {
+            missingBoardFrames++
+            if (missingBoardFrames >= BOARD_LOST_FRAME_LIMIT) {
+                onBoardLost()
+                if (previousState is ChessAssistantState.Result) {
+                    ChessAssistantController.update(ChessAssistantState.SearchingBoard)
+                }
+            }
+            return
+        }
+        missingBoardFrames = 0
 
         if (previousState !is ChessAssistantState.Result) {
             ChessAssistantController.update(ChessAssistantState.RecognizingPosition)
@@ -116,7 +135,7 @@ class ScreenFrameProcessor(
                 ChessAssistantController.update(ChessAssistantState.Analyzing)
                 val result = engine.analyze(
                     fen = tracking.fen,
-                    depth = ENGINE_DEPTH
+                    depth = analysisDepth
                 )
                 if (closed) return
 
@@ -124,7 +143,7 @@ class ScreenFrameProcessor(
                     ChessAssistantState.Result(
                         fen = tracking.fen,
                         bestMove = result.bestMove,
-                        evaluation = result.evaluation,
+                        evaluation = if (showEvaluation) result.evaluation else "Disembunyikan",
                         depth = result.depth,
                         boardConfidence = detection.confidence
                     )
@@ -170,7 +189,6 @@ class ScreenFrameProcessor(
     }
 
     companion object {
-        private const val FRAME_INTERVAL_MS = 1_000L
-        private const val ENGINE_DEPTH = 3
+        private const val BOARD_LOST_FRAME_LIMIT = 3
     }
 }
