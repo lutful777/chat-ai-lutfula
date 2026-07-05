@@ -35,6 +35,12 @@ jobs:
           exit 1
         fi
         tail -n 40 gradle-build.log
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: gradle-log
+        path: gradle-build.log
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
