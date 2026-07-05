@@ -2,41 +2,45 @@
 
 ## Chess Screen Assistant
 
-Versi ini menyediakan analisis papan dari gambar yang dipilih pengguna.
+Fitur ini membaca papan catur langsung dari layar menggunakan Android MediaProjection. Pengguna harus memberi izin terlebih dahulu, lalu aplikasi memproses frame secara lokal sekitar satu kali per detik.
 
 ### Cara menggunakan
 
 1. Buka menu samping dan pilih **Chess Assistant**.
-2. Mulai sesi ketika papan masih berada pada posisi awal permainan.
-3. Ambil gambar papan catur.
-4. Tekan **Pilih Screenshot** lalu pilih gambar tersebut.
-5. Setelah sebuah langkah dimainkan, ambil gambar terbaru dan pilih kembali tanpa menekan **Reset Sesi**.
-6. Tekan **Reset Sesi** sebelum memulai permainan baru.
+2. Tekan **Mulai Membaca Layar**.
+3. Setujui dialog perekaman layar Android.
+4. Pada Android yang mendukung berbagi satu aplikasi, pilih aplikasi catur yang ingin dibaca.
+5. Buka papan catur pada posisi awal standar dan tampilkan seluruh papan.
+6. Tunggu notifikasi menampilkan langkah terbaik.
+7. Mainkan langkah secara manual; rekomendasi akan diperbarui saat posisi berubah.
+8. Tekan **Stop** dari aplikasi atau notifikasi setelah selesai.
 
 ### Cara kerja
 
-- Aplikasi mencari pola papan 8×8.
-- Petak yang berisi bidak dikenali dari perbedaan visual terhadap warna petak.
+- `MediaProjection` dan `ImageReader` mengambil frame layar.
+- Frame diproses lokal dan tidak disimpan ke galeri.
+- Aplikasi mencari pola papan 8×8 dan mendeteksi petak yang terisi.
 - Identitas bidak dipertahankan dari riwayat langkah sejak posisi awal.
 - Posisi diubah menjadi FEN.
 - Mesin catur Kotlin lokal menghitung saran langkah dengan pencarian alpha-beta.
-- Kedalaman efektif mesin lokal dibatasi hingga 3 untuk menjaga kinerja ponsel.
+- Kedalaman efektif mesin lokal dibatasi hingga 3 agar penggunaan CPU tetap aman.
 
 ### Privasi
 
-- Gambar dipilih langsung oleh pengguna melalui pemilih file Android.
-- Pemrosesan dilakukan secara lokal.
-- Gambar dilepas dari memori setelah analisis.
-- Aplikasi tidak melakukan sentuhan atau pemindahan bidak otomatis.
+- Pembacaan layar hanya dimulai setelah izin Android diberikan.
+- Notifikasi foreground tetap aktif selama proses berjalan.
+- Frame diproses di perangkat dan tidak dikirim ke Gemini, Firebase, server, atau API lain.
+- Bitmap dilepas dari memori setelah pemrosesan.
+- Aplikasi tidak memakai AccessibilityService, tap otomatis, swipe otomatis, atau pemindahan bidak otomatis.
 
 ### Keterbatasan
 
 - Sesi harus dimulai dari posisi awal catur standar.
 - Papan harus terlihat penuh, lurus, dan tidak tertutup menu atau animasi.
 - Tema papan harus mempunyai dua warna petak yang cukup berbeda.
-- Setiap gambar berikutnya harus berasal dari permainan dan orientasi papan yang sama.
+- Orientasi papan sebaiknya tidak berubah selama satu sesi.
 - Mesin lokal bawaan merupakan mesin ringan, bukan pengganti Stockfish.
-- Mode pembacaan terus-menerus masih memerlukan validasi perangkat lebih lanjut.
+- Overlay panah di atas aplikasi lain belum tersedia; rekomendasi tampil melalui notifikasi dan halaman Chess Assistant.
 
 ### Pengujian
 
