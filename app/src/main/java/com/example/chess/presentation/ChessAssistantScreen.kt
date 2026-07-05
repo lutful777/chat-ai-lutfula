@@ -1,6 +1,9 @@
 package com.example.chess.presentation
 
-import android.graphics.BitmapFactory
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -13,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.example.chess.capture.ScreenCaptureService
 import com.example.chess.domain.ChessAssistantState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -24,22 +28,35 @@ fun ChessAssistantScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val projectionManager = remember {
+        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    }
 
-    val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri == null) {
-            viewModel.onPermissionDenied()
-        } else {
-            val bitmap = runCatching {
-                context.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
-            }.getOrNull()
-            if (bitmap == null) {
-                viewModel.onPermissionDenied()
-            } else {
-                viewModel.analyzeBitmap(bitmap)
+    val capturePermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val serviceIntent = Intent(context, ScreenCaptureService::class.java).apply {
+                action = ScreenCaptureService.ACTION_START
+                putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
             }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        } else {
+            viewModel.onPermissionDenied()
         }
+    }
+
+    fun stopService() {
+        val stopIntent = Intent(context, ScreenCaptureService::class.java).apply {
+            action = ScreenCaptureService.ACTION_STOP
+        }
+        context.startService(stopIntent)
+        viewModel.stopCapture()
     }
 
     Scaffold(
@@ -67,34 +84,38 @@ fun ChessAssistantScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(text = "Analisis Screenshot Catur", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "Pembacaan Layar Langsung",
+                style = MaterialTheme.typography.titleMedium
+            )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Ambil screenshot papan mulai dari posisi awal, lalu pilih gambarnya di sini. " +
-                    "Untuk langkah berikutnya, pilih screenshot terbaru dari permainan yang sama.",
+                text = "Tekan Mulai, izinkan perekaman layar, lalu buka aplikasi catur. " +
+                    "Mulai sesi saat papan masih pada posisi awal. Hasil langkah terbaik juga tampil di notifikasi.",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(20.dp))
 
             when (val currentState = state) {
-                ChessAssistantState.Idle -> Text("Siap menganalisis")
-                ChessAssistantState.RequestingPermission -> Text("Pilih screenshot dari galeri…")
-                ChessAssistantState.CapturingScreen -> Text("Gambar diterima")
+                ChessAssistantState.Idle -> Text("Siap membaca layar")
+                ChessAssistantState.RequestingPermission -> Text("Menunggu izin membaca layar…")
+                ChessAssistantState.CapturingScreen -> Text("Pembacaan layar aktif")
                 ChessAssistantState.SearchingBoard -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Mencari papan catur…")
+                    Text("Mencari papan catur di layar…")
                 }
                 ChessAssistantState.RecognizingPosition -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Membaca perubahan posisi…")
+                    Text("Membaca posisi papan…")
                 }
                 ChessAssistantState.Analyzing -> {
                     CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Menghitung langkah…")
+                    Text("Menghitung langkah terbaik…")
                 }
+                is ChessAssistantState.Waiting -> Text(currentState.message)
                 is ChessAssistantState.Result -> {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -103,7 +124,9 @@ fun ChessAssistantScreen(
                                 style = MaterialTheme.typography.titleLarge
                             )
                             Text("Evaluasi: ${currentState.evaluation}")
-                            if (currentState.depth > 0) Text("Kedalaman: ${currentState.depth}")
+                            if (currentState.depth > 0) {
+                                Text("Kedalaman: ${currentState.depth}")
+                            }
                             Text(
                                 text = "FEN: ${currentState.fen}",
                                 style = MaterialTheme.typography.bodySmall
@@ -125,17 +148,21 @@ fun ChessAssistantScreen(
                 Button(
                     onClick = {
                         viewModel.startCapture()
-                        imagePicker.launch("image/*")
+                        capturePermission.launch(
+                            projectionManager.createScreenCaptureIntent()
+                        )
                     },
-                    enabled = state !is ChessAssistantState.SearchingBoard &&
-                        state !is ChessAssistantState.RecognizingPosition &&
-                        state !is ChessAssistantState.Analyzing
+                    enabled = state == ChessAssistantState.Idle ||
+                        state is ChessAssistantState.Error
                 ) {
-                    Text("Pilih Screenshot")
+                    Text("Mulai Membaca Layar")
                 }
 
-                OutlinedButton(onClick = viewModel::stopCapture) {
-                    Text("Reset Sesi")
+                OutlinedButton(
+                    onClick = ::stopService,
+                    enabled = state != ChessAssistantState.Idle
+                ) {
+                    Text("Stop")
                 }
             }
         }
