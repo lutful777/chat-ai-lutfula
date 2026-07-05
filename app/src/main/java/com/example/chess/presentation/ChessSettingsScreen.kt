@@ -17,12 +17,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun ChessSettingsScreen(
     repository: ChessSettingsRepository,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToAttribution: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     
     val enabled by repository.enabled.collectAsState(initial = true)
-    val depth by repository.depth.collectAsState(initial = 10)
+    val onlineEnabled by repository.onlineEnabled.collectAsState(initial = true)
+    val endpointUrl by repository.endpointUrl.collectAsState(initial = "https://example.com/api/chess/analyze")
+    val localFallback by repository.localFallback.collectAsState(initial = false)
     val fps by repository.fps.collectAsState(initial = 1)
     val showEval by repository.showEval.collectAsState(initial = true)
     val showArrow by repository.showArrow.collectAsState(initial = true)
@@ -58,17 +61,44 @@ fun ChessSettingsScreen(
                 )
             }
             
-            Divider()
+            HorizontalDivider()
             
-            Text("Engine Depth: \$depth", modifier = Modifier.padding(top = 16.dp))
-            Slider(
-                value = depth.toFloat(),
-                onValueChange = { coroutineScope.launch { repository.updateDepth(it.toInt()) } },
-                valueRange = 1f..20f,
-                steps = 19
+            Text("Stockfish Online Settings", modifier = Modifier.padding(top = 16.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
+            
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Server Stockfish online", style = MaterialTheme.typography.bodyLarge)
+                Switch(
+                    checked = onlineEnabled,
+                    onCheckedChange = { coroutineScope.launch { repository.updateOnlineEnabled(it) } }
+                )
+            }
+            
+            OutlinedTextField(
+                value = endpointUrl,
+                onValueChange = { coroutineScope.launch { repository.updateEndpointUrl(it) } },
+                label = { Text("URL Endpoint") },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
             )
             
-            Text("Capture FPS: \$fps", modifier = Modifier.padding(top = 16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Fallback lokal", style = MaterialTheme.typography.bodyLarge)
+                Switch(
+                    checked = localFallback,
+                    onCheckedChange = { coroutineScope.launch { repository.updateLocalFallback(it) } }
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            Text("Capture FPS: \$fps", modifier = Modifier.padding(top = 8.dp))
             Slider(
                 value = fps.toFloat(),
                 onValueChange = { coroutineScope.launch { repository.updateFps(it.toInt()) } },
@@ -81,7 +111,7 @@ fun ChessSettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Show Evaluation", style = MaterialTheme.typography.bodyLarge)
+                Text("Tampilkan evaluasi", style = MaterialTheme.typography.bodyLarge)
                 Switch(
                     checked = showEval,
                     onCheckedChange = { coroutineScope.launch { repository.updateShowEval(it) } }
@@ -93,11 +123,20 @@ fun ChessSettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Show Arrow Overlay", style = MaterialTheme.typography.bodyLarge)
+                Text("Tampilkan panah", style = MaterialTheme.typography.bodyLarge)
                 Switch(
                     checked = showArrow,
                     onCheckedChange = { coroutineScope.launch { repository.updateShowArrow(it) } }
                 )
+            }
+            
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+            
+            Button(
+                onClick = onNavigateToAttribution,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Lisensi & Atribusi Stockfish")
             }
         }
     }

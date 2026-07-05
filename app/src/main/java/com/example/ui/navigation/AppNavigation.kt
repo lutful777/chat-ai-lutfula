@@ -33,6 +33,7 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
     object Chess : Screen("chess", "Chess", Icons.Filled.Visibility)
     object Settings : Screen("settings", "Settings", Icons.Filled.Settings)
     object ChessSettings : Screen("chess_settings", "Chess Settings", Icons.Filled.Settings)
+    object Attribution : Screen("attribution", "Attribution", Icons.Filled.Settings)
     object Studio : Screen("studio", "AI Studio", Icons.Filled.Movie)
 }
 
@@ -102,6 +103,12 @@ fun AppNavigation() {
             composable(Screen.ChessSettings.route) {
                 com.example.chess.presentation.ChessSettingsScreen(
                     repository = com.example.chess.data.ChessSettingsRepository(context),
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToAttribution = { navController.navigate(Screen.Attribution.route) }
+                )
+            }
+            composable(Screen.Attribution.route) {
+                com.example.chess.presentation.AttributionScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

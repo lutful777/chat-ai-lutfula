@@ -10,7 +10,7 @@ interface ChessEngine {
 }
 
 // Dummy Engine for MVP
-class DummyChessEngine : ChessEngine {
+class SimpleChessEngine : ChessEngine {
     private var isAnalyzing = false
 
     override suspend fun analyze(fen: String, depth: Int): ChessAnalysisResult {

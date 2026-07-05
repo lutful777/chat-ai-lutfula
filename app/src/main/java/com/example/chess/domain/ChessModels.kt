@@ -1,7 +1,6 @@
 package com.example.chess.domain
 
 enum class ChessColor { WHITE, BLACK }
-
 enum class ChessPieceType { KING, QUEEN, ROOK, BISHOP, KNIGHT, PAWN }
 
 data class ChessPiece(val type: ChessPieceType, val color: ChessColor) {
@@ -24,7 +23,8 @@ data class ChessAnalysisResult(
     val bestMove: String,
     val ponderMove: String?,
     val evaluation: String,
-    val depth: Int
+    val depth: Int,
+    val isLocalFallback: Boolean = false
 )
 
 sealed interface ChessAssistantState {
