@@ -24,7 +24,14 @@ class ScreenFrameProcessor(
     engineDepth: Int,
     private val minimumConfidence: Float,
     private val showEvaluation: Boolean,
-    private val onBestMove: (String, Rect, BoardOrientation) -> Unit = { _, _, _ -> },
+    private val onBestMove: (
+        move: String,
+        boardBounds: Rect,
+        orientation: BoardOrientation,
+        frameWidth: Int,
+        frameHeight: Int
+    ) -> Unit = { _, _, _, _, _ -> },
+    private val onWaitingForOpponent: () -> Unit = {},
     private val onBoardLost: () -> Unit = {}
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -49,7 +56,8 @@ class ScreenFrameProcessor(
 
         val now = SystemClock.elapsedRealtime()
         if (now - lastAcceptedFrameAt < frameIntervalMs ||
-            !processing.compareAndSet(false, true)) {
+            !processing.compareAndSet(false, true)
+        ) {
             image.close()
             return
         }
@@ -132,6 +140,17 @@ class ScreenFrameProcessor(
             is PositionTrackingResult.Position -> {
                 if (!tracking.changed) return
 
+                if (!BottomSidePolicy.isBottomSideTurn(tracking.fen, tracking.orientation)) {
+                    engine.stopAnalysis()
+                    onWaitingForOpponent()
+                    ChessAssistantController.update(
+                        ChessAssistantState.Waiting(
+                            "Menunggu langkah sisi atas. Arahan hanya diberikan untuk bidak di bagian bawah."
+                        )
+                    )
+                    return
+                }
+
                 ChessAssistantController.update(ChessAssistantState.Analyzing)
                 val result = engine.analyze(
                     fen = tracking.fen,
@@ -151,7 +170,9 @@ class ScreenFrameProcessor(
                 onBestMove(
                     result.bestMove,
                     Rect(detection.bounds),
-                    tracking.orientation
+                    tracking.orientation,
+                    bitmap.width,
+                    bitmap.height
                 )
             }
         }
