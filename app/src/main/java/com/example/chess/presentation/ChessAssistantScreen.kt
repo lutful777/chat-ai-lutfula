@@ -4,6 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -28,6 +31,8 @@ fun ChessAssistantScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    var continueAfterOverlayPermission by remember { mutableStateOf(false) }
+
     val projectionManager = remember {
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
@@ -41,13 +46,45 @@ fun ChessAssistantScreen(
                 putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
             }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent)
             } else {
                 context.startService(serviceIntent)
             }
         } else {
             viewModel.onPermissionDenied()
+        }
+    }
+
+    val launchCapturePermission = {
+        viewModel.startCapture()
+        capturePermission.launch(projectionManager.createScreenCaptureIntent())
+    }
+
+    val overlayPermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (continueAfterOverlayPermission) {
+            continueAfterOverlayPermission = false
+            if (Settings.canDrawOverlays(context)) {
+                launchCapturePermission()
+            } else {
+                viewModel.onOverlayPermissionDenied()
+            }
+        }
+    }
+
+    fun startWithRequiredPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            !Settings.canDrawOverlays(context)) {
+            continueAfterOverlayPermission = true
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${context.packageName}")
+            )
+            overlayPermission.launch(intent)
+        } else {
+            launchCapturePermission()
         }
     }
 
@@ -85,20 +122,20 @@ fun ChessAssistantScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Pembacaan Layar Langsung",
+                text = "Pembacaan Layar dan Panah Langkah",
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Tekan Mulai, izinkan perekaman layar, lalu buka aplikasi catur. " +
-                    "Mulai sesi saat papan masih pada posisi awal. Hasil langkah terbaik juga tampil di notifikasi.",
+                text = "Tekan Mulai, berikan izin tampil di atas aplikasi lain dan izin perekaman layar, " +
+                    "lalu buka aplikasi catur. Panah akan menunjukkan petak asal dan tujuan.",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(modifier = Modifier.height(20.dp))
 
             when (val currentState = state) {
                 ChessAssistantState.Idle -> Text("Siap membaca layar")
-                ChessAssistantState.RequestingPermission -> Text("Menunggu izin membaca layar…")
+                ChessAssistantState.RequestingPermission -> Text("Menunggu izin sistem…")
                 ChessAssistantState.CapturingScreen -> Text("Pembacaan layar aktif")
                 ChessAssistantState.SearchingBoard -> {
                     CircularProgressIndicator()
@@ -123,6 +160,7 @@ fun ChessAssistantScreen(
                                 text = "Langkah terbaik: ${currentState.bestMove}",
                                 style = MaterialTheme.typography.titleLarge
                             )
+                            Text("Petunjuk: ${formatMove(currentState.bestMove)}")
                             Text("Evaluasi: ${currentState.evaluation}")
                             if (currentState.depth > 0) {
                                 Text("Kedalaman: ${currentState.depth}")
@@ -146,12 +184,7 @@ fun ChessAssistantScreen(
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
-                    onClick = {
-                        viewModel.startCapture()
-                        capturePermission.launch(
-                            projectionManager.createScreenCaptureIntent()
-                        )
-                    },
+                    onClick = ::startWithRequiredPermissions,
                     enabled = state == ChessAssistantState.Idle ||
                         state is ChessAssistantState.Error
                 ) {
@@ -167,4 +200,9 @@ fun ChessAssistantScreen(
             }
         }
     }
+}
+
+private fun formatMove(move: String): String {
+    if (move.length < 4) return move
+    return "${move.substring(0, 2).uppercase()} → ${move.substring(2, 4).uppercase()}"
 }
