@@ -2,34 +2,51 @@
 
 ## Chess Screen Assistant
 
-### Cara Mengaktifkan Fitur
-1. Buka menu samping dari halaman utama chat.
-2. Pilih "Chess Assistant".
-3. Tekan ikon "Settings" (roda gigi) untuk mengatur konfigurasi seperti batas kedalaman mesin, fps, dsb.
-4. Tekan tombol "Start" di halaman Chess Assistant.
+Versi ini menyediakan analisis papan dari gambar yang dipilih pengguna.
 
-### Izin Screen Capture
-- Aplikasi akan meminta izin (MediaProjection) untuk merekam layar.
-- Setujui dialog izin dari sistem Android.
-- Notifikasi status aktif (foreground service) akan muncul.
+### Cara menggunakan
 
-### Cara Menghentikan Fitur
-- Tekan tombol "Stop" di dalam aplikasi pada halaman Chess Assistant, ATAU
-- Buka laci notifikasi dan tekan tombol "Stop" di notifikasi "Chess Screen Assistant".
+1. Buka menu samping dan pilih **Chess Assistant**.
+2. Mulai sesi ketika papan masih berada pada posisi awal permainan.
+3. Ambil gambar papan catur.
+4. Tekan **Pilih Screenshot** lalu pilih gambar tersebut.
+5. Setelah sebuah langkah dimainkan, ambil gambar terbaru dan pilih kembali tanpa menekan **Reset Sesi**.
+6. Tekan **Reset Sesi** sebelum memulai permainan baru.
 
-### Keterbatasan Pembacaan Papan
-- Saat ini merupakan tahap MVP menggunakan metode pengenalan dummy/sederhana.
-- Posisi resolusi dan tema visual yang sangat kompleks mungkin belum terdeteksi 100%.
+### Cara kerja
 
-### Informasi Mesin Catur & Lisensi
-- Menggunakan arsitektur protokol komunikasi UCI (Universal Chess Interface).
-- Silakan gunakan binari mesin catur (seperti Stockfish - GPLv3) untuk diproses melalui class `UciEngine.kt`.
+- Aplikasi mencari pola papan 8×8.
+- Petak yang berisi bidak dikenali dari perbedaan visual terhadap warna petak.
+- Identitas bidak dipertahankan dari riwayat langkah sejak posisi awal.
+- Posisi diubah menjadi FEN.
+- Mesin catur Kotlin lokal menghitung saran langkah dengan pencarian alpha-beta.
+- Kedalaman efektif mesin lokal dibatasi hingga 3 untuk menjaga kinerja ponsel.
 
-### Privasi Data
-- Screen capture dijalankan sepenuhnya **offline dan lokal**.
-- Tidak ada data, gambar, frame, atau screenshot yang dikirim ke internet, API, atau Firebase.
-- Image buffer dihapus setiap kali frame diproses selesai dari memory.
+### Privasi
 
-### Cara Menjalankan Pengujian
-Jalankan unit test standar atau instrumented UI test via gradle:
-`./gradlew testDebugUnitTest`
+- Gambar dipilih langsung oleh pengguna melalui pemilih file Android.
+- Pemrosesan dilakukan secara lokal.
+- Gambar dilepas dari memori setelah analisis.
+- Aplikasi tidak melakukan sentuhan atau pemindahan bidak otomatis.
+
+### Keterbatasan
+
+- Sesi harus dimulai dari posisi awal catur standar.
+- Papan harus terlihat penuh, lurus, dan tidak tertutup menu atau animasi.
+- Tema papan harus mempunyai dua warna petak yang cukup berbeda.
+- Setiap gambar berikutnya harus berasal dari permainan dan orientasi papan yang sama.
+- Mesin lokal bawaan merupakan mesin ringan, bukan pengganti Stockfish.
+- Mode pembacaan terus-menerus masih memerlukan validasi perangkat lebih lanjut.
+
+### Pengujian
+
+```bash
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+```
+
+### Menjalankan aplikasi
+
+1. Buka proyek dengan Android Studio.
+2. Siapkan `.env` mengikuti `.env.example` untuk fitur chat utama.
+3. Jalankan aplikasi pada emulator atau perangkat Android.
