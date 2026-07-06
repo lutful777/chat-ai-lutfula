@@ -50,7 +50,11 @@ class ScreenFrameProcessor(
         }
     }
 
-    fun processFrame(bitmap: Bitmap, manualGeometry: BoardGeometry? = null) {
+    fun processFrame(
+        bitmap: Bitmap,
+        recognitionGeometry: BoardGeometry? = null,
+        displayGeometry: BoardGeometry? = recognitionGeometry
+    ) {
         if (frameJob?.isActive == true) {
             bitmap.recycle()
             return
@@ -58,8 +62,8 @@ class ScreenFrameProcessor(
 
         frameJob = scope.launch {
             try {
-                val geometry = if (manualGeometry != null) {
-                    manualGeometry
+                val geometry = if (recognitionGeometry != null) {
+                    recognitionGeometry
                 } else {
                     _resultFlow.value = ProcessorState.SearchingBoard
                     boardDetector.detect(bitmap, previousGeometry)
@@ -71,17 +75,31 @@ class ScreenFrameProcessor(
                     return@launch
                 }
 
-                previousGeometry = if (manualGeometry == null) geometry else null
-                _resultFlow.value = ProcessorState.RecognizingPosition(geometry)
-                val observation = pieceRecognizer.recognize(bitmap, geometry)
+                previousGeometry = if (recognitionGeometry == null) geometry else null
+                val overlayGeometry = displayGeometry ?: geometry
+                _resultFlow.value = ProcessorState.RecognizingPosition(overlayGeometry)
+
+                val rawObservation = pieceRecognizer.recognize(bitmap, geometry)
+                val observation = if (rawObservation.geometry == overlayGeometry) {
+                    rawObservation
+                } else {
+                    rawObservation.copy(geometry = overlayGeometry)
+                }
+
                 when (val tracking = positionTracker.update(observation)) {
                     is PositionTrackingResult.Waiting -> {
-                        _resultFlow.value = ProcessorState.WaitingForPosition(tracking.message, geometry)
+                        _resultFlow.value = ProcessorState.WaitingForPosition(
+                            tracking.message,
+                            overlayGeometry
+                        )
                     }
                     is PositionTrackingResult.Lost -> {
                         lastFen.set("")
                         lastAnalysis = null
-                        _resultFlow.value = ProcessorState.WaitingForPosition(tracking.message, geometry)
+                        _resultFlow.value = ProcessorState.WaitingForPosition(
+                            tracking.message,
+                            overlayGeometry
+                        )
                     }
                     is PositionTrackingResult.Ready -> analyzePosition(tracking)
                 }
