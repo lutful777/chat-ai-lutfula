@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.chess.capture.ScreenCaptureService
 import com.example.chess.domain.ChessAssistantState
 
@@ -35,7 +36,7 @@ fun ChessAssistantScreen(
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
 
-    val launcher = rememberLauncherForActivityResult(
+    val projectionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
@@ -44,10 +45,22 @@ fun ChessAssistantScreen(
                 putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
             }
-            context.startForegroundService(intent)
+            ContextCompat.startForegroundService(context, intent)
             viewModel.onPermissionGranted()
         } else {
             viewModel.onPermissionDenied()
+        }
+    }
+
+    val overlayLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (Settings.canDrawOverlays(context)) {
+            projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+        } else {
+            viewModel.onPermissionDenied(
+                "Izin tampil di atas aplikasi diperlukan agar panah catur dapat ditampilkan"
+            )
         }
     }
 
@@ -81,11 +94,15 @@ fun ChessAssistantScreen(
 
             when (val currentState = state) {
                 is ChessAssistantState.Idle -> Text("Menunggu dimulai")
-                is ChessAssistantState.RequestingPermission -> Text("Meminta izin layar...")
-                is ChessAssistantState.CapturingScreen -> Text("Screen Capture Aktif")
+                is ChessAssistantState.RequestingPermission -> Text("Meminta izin overlay dan layar...")
+                is ChessAssistantState.SelectingBoardArea -> {
+                    CircularProgressIndicator()
+                    Text("Atur kotak tepat di atas papan, lalu tekan Gunakan area")
+                }
+                is ChessAssistantState.CapturingScreen -> Text("Area papan aktif")
                 is ChessAssistantState.SearchingBoard -> {
                     CircularProgressIndicator()
-                    Text("Mencari papan...")
+                    Text("Menunggu area papan...")
                 }
                 is ChessAssistantState.RecognizingPosition -> {
                     CircularProgressIndicator()
@@ -120,16 +137,15 @@ fun ChessAssistantScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Button(
                     onClick = {
-                        if (!Settings.canDrawOverlays(context)) {
-                            viewModel.onOverlayPermissionRequired()
+                        viewModel.startCapture()
+                        if (Settings.canDrawOverlays(context)) {
+                            projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                        } else {
                             val permissionIntent = Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                 Uri.parse("package:${context.packageName}")
                             )
-                            context.startActivity(permissionIntent)
-                        } else {
-                            viewModel.startCapture()
-                            launcher.launch(projectionManager.createScreenCaptureIntent())
+                            overlayLauncher.launch(permissionIntent)
                         }
                     },
                     enabled = state == ChessAssistantState.Idle || state is ChessAssistantState.Error

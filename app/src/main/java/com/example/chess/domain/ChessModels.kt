@@ -30,6 +30,7 @@ data class ChessAnalysisResult(
 sealed interface ChessAssistantState {
     object Idle : ChessAssistantState
     object RequestingPermission : ChessAssistantState
+    object SelectingBoardArea : ChessAssistantState
     object CapturingScreen : ChessAssistantState
     object SearchingBoard : ChessAssistantState
     object RecognizingPosition : ChessAssistantState

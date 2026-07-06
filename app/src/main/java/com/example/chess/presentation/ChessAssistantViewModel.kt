@@ -16,8 +16,8 @@ class ChessAssistantViewModel : ViewModel() {
         ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
     }
 
-    fun onPermissionDenied() {
-        ChessAssistantStatusBus.update(ChessAssistantState.Error("Izin perekaman layar ditolak"))
+    fun onPermissionDenied(message: String = "Izin perekaman layar ditolak") {
+        ChessAssistantStatusBus.update(ChessAssistantState.Error(message))
     }
 
     fun onOverlayPermissionRequired() {
