@@ -50,7 +50,7 @@ class ScreenFrameProcessor(
         }
     }
 
-    fun processFrame(bitmap: Bitmap) {
+    fun processFrame(bitmap: Bitmap, manualGeometry: BoardGeometry? = null) {
         if (frameJob?.isActive == true) {
             bitmap.recycle()
             return
@@ -58,15 +58,20 @@ class ScreenFrameProcessor(
 
         frameJob = scope.launch {
             try {
-                _resultFlow.value = ProcessorState.SearchingBoard
-                val geometry = boardDetector.detect(bitmap, previousGeometry)
+                val geometry = if (manualGeometry != null) {
+                    manualGeometry
+                } else {
+                    _resultFlow.value = ProcessorState.SearchingBoard
+                    boardDetector.detect(bitmap, previousGeometry)
+                }
+
                 if (geometry == null) {
                     previousGeometry = null
                     _resultFlow.value = ProcessorState.BoardNotFound
                     return@launch
                 }
-                previousGeometry = geometry
 
+                previousGeometry = if (manualGeometry == null) geometry else null
                 _resultFlow.value = ProcessorState.RecognizingPosition(geometry)
                 val observation = pieceRecognizer.recognize(bitmap, geometry)
                 when (val tracking = positionTracker.update(observation)) {
