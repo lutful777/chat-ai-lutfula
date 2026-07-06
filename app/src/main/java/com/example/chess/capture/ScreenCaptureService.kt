@@ -23,10 +23,12 @@ import android.os.IBinder
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.example.chess.data.ChessSettingsRepository
+import com.example.chess.detection.BoardGeometry
 import com.example.chess.domain.ChessAssistantState
 import com.example.chess.domain.ChessAssistantStatusBus
 import com.example.chess.engine.ChessEngineFactory
 import com.example.chess.engine.EngineSettings
+import com.example.chess.overlay.BoardAreaSelectorOverlay
 import com.example.chess.overlay.ChessOverlayManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -48,10 +50,14 @@ class ScreenCaptureService : Service() {
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
     private var overlayManager: ChessOverlayManager? = null
+    private var boardAreaSelector: BoardAreaSelectorOverlay? = null
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var processor: ScreenFrameProcessor? = null
     private var isCapturing = false
     private val captureRequested = AtomicBoolean(false)
+
+    @Volatile
+    private var selectedBoardArea: BoardGeometry? = null
 
     companion object {
         const val ACTION_START = "ACTION_START"
@@ -67,6 +73,7 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         overlayManager = ChessOverlayManager(this)
+        boardAreaSelector = BoardAreaSelectorOverlay(this)
         startCaptureForeground()
     }
 
@@ -151,8 +158,29 @@ class ScreenCaptureService : Service() {
                     throw IllegalStateException("Virtual display gagal dibuat")
                 }
 
+                withContext(Dispatchers.Main) {
+                    selectedBoardArea = null
+                    ChessAssistantStatusBus.update(ChessAssistantState.SelectingBoardArea)
+                    boardAreaSelector?.show(
+                        onConfirmed = { geometry ->
+                            selectedBoardArea = geometry
+                            ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
+                        },
+                        onCancelled = {
+                            ChessAssistantStatusBus.update(
+                                ChessAssistantState.Error("Pemilihan area papan dibatalkan")
+                            )
+                            stopSelf()
+                        }
+                    )
+                }
+
                 val frameDelayMs = 1000L / fps
                 while (isActive && isCapturing) {
+                    if (selectedBoardArea == null) {
+                        delay(200)
+                        continue
+                    }
                     withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(true) }
                     delay(90)
                     captureRequested.set(true)
@@ -166,6 +194,7 @@ class ScreenCaptureService : Service() {
                     ?: "Gagal memulai pembacaan layar"
                 ChessAssistantStatusBus.update(ChessAssistantState.Error(message))
                 withContext(Dispatchers.Main) {
+                    boardAreaSelector?.hide()
                     overlayManager?.showError(message)
                 }
                 stopSelf()
@@ -230,7 +259,11 @@ class ScreenCaptureService : Service() {
                         overlayManager?.showError(state.message)
                     }
                     is ProcessorState.Idle -> {
-                        ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
+                        if (selectedBoardArea == null) {
+                            ChessAssistantStatusBus.update(ChessAssistantState.SelectingBoardArea)
+                        } else {
+                            ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
+                        }
                         overlayManager?.hideOverlay()
                     }
                 }
@@ -274,10 +307,15 @@ class ScreenCaptureService : Service() {
                 } finally {
                     image.close()
                 }
+                val geometry = selectedBoardArea
 
                 serviceScope.launch {
                     withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(false) }
-                    if (bitmap != null) processor?.processFrame(bitmap)
+                    if (bitmap != null && geometry != null) {
+                        processor?.processFrame(bitmap, geometry)
+                    } else {
+                        bitmap?.recycle()
+                    }
                 }
             }, captureHandler)
 
@@ -334,7 +372,7 @@ class ScreenCaptureService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Chess Screen Assistant")
-            .setContentText("Membaca papan dan menjalankan Stockfish")
+            .setContentText("Membaca area papan dan menjalankan Stockfish")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setOngoing(true)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
@@ -354,6 +392,8 @@ class ScreenCaptureService : Service() {
     override fun onDestroy() {
         isCapturing = false
         captureRequested.set(false)
+        selectedBoardArea = null
+        boardAreaSelector?.hide()
         processor?.stop()
         processor = null
         serviceScope.cancel()
