@@ -373,7 +373,9 @@ class ScreenCaptureService : Service() {
         captureThread?.quitSafely()
         captureThread = null
         captureHandler = null
-        ChessAssistantStatusBus.update(ChessAssistantState.Idle)
+        if (ChessAssistantStatusBus.state.value !is ChessAssistantState.Error) {
+            ChessAssistantStatusBus.update(ChessAssistantState.Idle)
+        }
         super.onDestroy()
     }
 }
