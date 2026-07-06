@@ -95,10 +95,14 @@ fun ChessAssistantScreen(
             when (val currentState = state) {
                 is ChessAssistantState.Idle -> Text("Menunggu dimulai")
                 is ChessAssistantState.RequestingPermission -> Text("Meminta izin overlay dan layar...")
-                is ChessAssistantState.CapturingScreen -> Text("Screen Capture Aktif")
+                is ChessAssistantState.SelectingBoardArea -> {
+                    CircularProgressIndicator()
+                    Text("Atur kotak tepat di atas papan, lalu tekan Gunakan area")
+                }
+                is ChessAssistantState.CapturingScreen -> Text("Area papan aktif")
                 is ChessAssistantState.SearchingBoard -> {
                     CircularProgressIndicator()
-                    Text("Mencari papan...")
+                    Text("Menunggu area papan...")
                 }
                 is ChessAssistantState.RecognizingPosition -> {
                     CircularProgressIndicator()
