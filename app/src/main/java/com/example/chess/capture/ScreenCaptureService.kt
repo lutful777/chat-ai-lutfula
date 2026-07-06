@@ -1,5 +1,6 @@
 package com.example.chess.capture
 
+import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -90,7 +91,7 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
         val resultData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
         } else {
@@ -98,7 +99,7 @@ class ScreenCaptureService : Service() {
             intent.getParcelableExtra(EXTRA_RESULT_DATA)
         }
 
-        if (resultCode != -1 && resultData != null && !isCapturing) {
+        if (resultCode == Activity.RESULT_OK && resultData != null && !isCapturing) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
             if (mediaProjection == null) {
