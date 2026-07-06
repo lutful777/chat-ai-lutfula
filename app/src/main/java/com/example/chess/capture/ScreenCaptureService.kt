@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.example.chess.data.ChessSettingsRepository
@@ -41,6 +42,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
@@ -59,6 +64,13 @@ class ScreenCaptureService : Service() {
     @Volatile
     private var selectedBoardArea: BoardGeometry? = null
 
+    @Volatile
+    private var rapidFramesRemaining = 0
+
+    private var lastBoardFingerprint: IntArray? = null
+    private var confirmationFramesRemaining = 0
+    private var lastProcessedFrameAt = 0L
+
     companion object {
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP = "ACTION_STOP"
@@ -66,6 +78,10 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_DATA = "EXTRA_RESULT_DATA"
         private const val CHANNEL_ID = "screen_capture_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val RAPID_FRAME_DELAY_MS = 220L
+        private const val HEARTBEAT_INTERVAL_MS = 10_000L
+        private const val SQUARE_CHANGE_THRESHOLD = 8
+        private const val MIN_CHANGED_SQUARES = 2
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -160,11 +176,15 @@ class ScreenCaptureService : Service() {
 
                 withContext(Dispatchers.Main) {
                     selectedBoardArea = null
+                    resetBoardFrameGate()
                     ChessAssistantStatusBus.update(ChessAssistantState.SelectingBoardArea)
                     boardAreaSelector?.show(
                         onConfirmed = { geometry ->
                             selectedBoardArea = geometry
-                            ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
+                            resetBoardFrameGate()
+                            rapidFramesRemaining = 2
+                            ChessAssistantStatusBus.update(ChessAssistantState.RecognizingPosition)
+                            captureRequested.set(true)
                         },
                         onCancelled = {
                             ChessAssistantStatusBus.update(
@@ -181,10 +201,16 @@ class ScreenCaptureService : Service() {
                         delay(200)
                         continue
                     }
-                    withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(true) }
+
+                    withContext(Dispatchers.Main) {
+                        overlayManager?.setCaptureSuppressed(true)
+                    }
                     delay(90)
                     captureRequested.set(true)
-                    delay(frameDelayMs)
+
+                    val rapid = rapidFramesRemaining > 0
+                    if (rapid) rapidFramesRemaining--
+                    delay(if (rapid) RAPID_FRAME_DELAY_MS else frameDelayMs)
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -299,7 +325,7 @@ class ScreenCaptureService : Service() {
                     return@setOnImageAvailableListener
                 }
 
-                val bitmap = try {
+                val fullBitmap = try {
                     imageToBitmap(image, width, height)
                 } catch (error: Exception) {
                     error.printStackTrace()
@@ -307,15 +333,53 @@ class ScreenCaptureService : Service() {
                 } finally {
                     image.close()
                 }
-                val geometry = selectedBoardArea
+                val selectedGeometry = selectedBoardArea
 
                 serviceScope.launch {
-                    withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(false) }
-                    if (bitmap != null && geometry != null) {
-                        processor?.processFrame(bitmap, geometry)
-                    } else {
-                        bitmap?.recycle()
+                    withContext(Dispatchers.Main) {
+                        overlayManager?.setCaptureSuppressed(false)
                     }
+
+                    if (fullBitmap == null || selectedGeometry == null) {
+                        fullBitmap?.recycle()
+                        return@launch
+                    }
+
+                    val cropped = try {
+                        cropBoardBitmap(fullBitmap, selectedGeometry)
+                    } catch (error: Exception) {
+                        error.printStackTrace()
+                        null
+                    }
+
+                    if (cropped == null) {
+                        if (!fullBitmap.isRecycled) fullBitmap.recycle()
+                        ChessAssistantStatusBus.update(
+                            ChessAssistantState.Error("Area papan berada di luar layar")
+                        )
+                        return@launch
+                    }
+
+                    if (cropped.bitmap !== fullBitmap && !fullBitmap.isRecycled) {
+                        fullBitmap.recycle()
+                    }
+
+                    if (!shouldProcessBoard(cropped.bitmap)) {
+                        cropped.bitmap.recycle()
+                        return@launch
+                    }
+
+                    val localGeometry = BoardGeometry(
+                        left = 0,
+                        top = 0,
+                        size = cropped.bitmap.width,
+                        confidence = 1f
+                    )
+                    processor?.processFrame(
+                        bitmap = cropped.bitmap,
+                        recognitionGeometry = localGeometry,
+                        displayGeometry = cropped.displayGeometry
+                    )
                 }
             }, captureHandler)
 
@@ -334,6 +398,104 @@ class ScreenCaptureService : Service() {
             error.printStackTrace()
             false
         }
+    }
+
+    private fun cropBoardBitmap(bitmap: Bitmap, requested: BoardGeometry): CroppedBoard? {
+        if (bitmap.width <= 0 || bitmap.height <= 0) return null
+        val left = requested.left.coerceIn(0, bitmap.width - 1)
+        val top = requested.top.coerceIn(0, bitmap.height - 1)
+        val availableWidth = bitmap.width - left
+        val availableHeight = bitmap.height - top
+        val size = min(requested.size, min(availableWidth, availableHeight))
+        if (size < 160) return null
+
+        val crop = Bitmap.createBitmap(bitmap, left, top, size, size)
+        return CroppedBoard(
+            bitmap = crop,
+            displayGeometry = BoardGeometry(
+                left = left,
+                top = top,
+                size = size,
+                confidence = 1f
+            )
+        )
+    }
+
+    @Synchronized
+    private fun shouldProcessBoard(bitmap: Bitmap): Boolean {
+        val current = boardFingerprint(bitmap)
+        val now = SystemClock.elapsedRealtime()
+        val previous = lastBoardFingerprint
+
+        if (previous == null) {
+            lastBoardFingerprint = current
+            confirmationFramesRemaining = 1
+            lastProcessedFrameAt = now
+            return true
+        }
+
+        var changedSquares = 0
+        for (index in current.indices) {
+            if (abs(current[index] - previous[index]) >= SQUARE_CHANGE_THRESHOLD) {
+                changedSquares++
+            }
+        }
+
+        val heartbeatDue = now - lastProcessedFrameAt >= HEARTBEAT_INTERVAL_MS
+        if (changedSquares >= MIN_CHANGED_SQUARES || heartbeatDue) {
+            lastBoardFingerprint = current
+            confirmationFramesRemaining = 1
+            lastProcessedFrameAt = now
+            return true
+        }
+
+        if (confirmationFramesRemaining > 0) {
+            confirmationFramesRemaining--
+            lastBoardFingerprint = current
+            lastProcessedFrameAt = now
+            return true
+        }
+
+        return false
+    }
+
+    private fun boardFingerprint(bitmap: Bitmap): IntArray {
+        val result = IntArray(64)
+        val squareSize = bitmap.width / 8f
+        val offsets = floatArrayOf(0.25f, 0.5f, 0.75f)
+        var index = 0
+
+        for (row in 0 until 8) {
+            for (column in 0 until 8) {
+                var lumaSum = 0f
+                var sampleCount = 0
+                for (offsetY in offsets) {
+                    for (offsetX in offsets) {
+                        val x = ((column + offsetX) * squareSize)
+                            .roundToInt()
+                            .coerceIn(0, bitmap.width - 1)
+                        val y = ((row + offsetY) * squareSize)
+                            .roundToInt()
+                            .coerceIn(0, bitmap.height - 1)
+                        val color = bitmap.getPixel(x, y)
+                        val red = (color shr 16) and 0xff
+                        val green = (color shr 8) and 0xff
+                        val blue = color and 0xff
+                        lumaSum += 0.2126f * red + 0.7152f * green + 0.0722f * blue
+                        sampleCount++
+                    }
+                }
+                result[index++] = (lumaSum / max(1, sampleCount)).roundToInt()
+            }
+        }
+        return result
+    }
+
+    @Synchronized
+    private fun resetBoardFrameGate() {
+        lastBoardFingerprint = null
+        confirmationFramesRemaining = 0
+        lastProcessedFrameAt = 0L
     }
 
     private fun imageToBitmap(image: Image, width: Int, height: Int): Bitmap {
@@ -393,6 +555,8 @@ class ScreenCaptureService : Service() {
         isCapturing = false
         captureRequested.set(false)
         selectedBoardArea = null
+        rapidFramesRemaining = 0
+        resetBoardFrameGate()
         boardAreaSelector?.hide()
         processor?.stop()
         processor = null
@@ -419,4 +583,9 @@ class ScreenCaptureService : Service() {
         }
         super.onDestroy()
     }
+
+    private data class CroppedBoard(
+        val bitmap: Bitmap,
+        val displayGeometry: BoardGeometry
+    )
 }
