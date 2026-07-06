@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.example.chess.data.ChessSettingsRepository
 import com.example.chess.domain.ChessAssistantState
@@ -26,6 +27,7 @@ import com.example.chess.domain.ChessAssistantStatusBus
 import com.example.chess.engine.ChessEngineFactory
 import com.example.chess.engine.EngineSettings
 import com.example.chess.overlay.ChessOverlayManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -74,26 +76,44 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
-        val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, -1) ?: -1
+        if (intent?.action != ACTION_START) {
+            ChessAssistantStatusBus.update(ChessAssistantState.Error("Perintah Chess Assistant tidak valid"))
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (!Settings.canDrawOverlays(this)) {
+            ChessAssistantStatusBus.update(
+                ChessAssistantState.Error("Izin tampil di atas aplikasi belum aktif")
+            )
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
         val resultData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            intent?.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
+            intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
         } else {
             @Suppress("DEPRECATION")
-            intent?.getParcelableExtra(EXTRA_RESULT_DATA)
+            intent.getParcelableExtra(EXTRA_RESULT_DATA)
         }
 
         if (resultCode != -1 && resultData != null && !isCapturing) {
             val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
             if (mediaProjection == null) {
-                ChessAssistantStatusBus.update(ChessAssistantState.Error("Izin perekaman layar tidak tersedia"))
+                ChessAssistantStatusBus.update(
+                    ChessAssistantState.Error("Izin perekaman layar tidak tersedia")
+                )
                 stopSelf()
                 return START_NOT_STICKY
             }
             ChessAssistantStatusBus.update(ChessAssistantState.CapturingScreen)
             startCapture()
         } else if (!isCapturing) {
-            ChessAssistantStatusBus.update(ChessAssistantState.Error("Data izin perekaman layar tidak valid"))
+            ChessAssistantStatusBus.update(
+                ChessAssistantState.Error("Data izin perekaman layar tidak valid")
+            )
             stopSelf()
         }
 
@@ -103,27 +123,51 @@ class ScreenCaptureService : Service() {
     private fun startCapture() {
         isCapturing = true
         serviceScope.launch {
-            val settingsRepository = ChessSettingsRepository(this@ScreenCaptureService)
-            val engineSettings = EngineSettings(
-                onlineEnabled = settingsRepository.onlineEnabled.first(),
-                endpointUrl = settingsRepository.endpointUrl.first(),
-                localFallback = settingsRepository.localFallback.first(),
-                showEval = settingsRepository.showEval.first(),
-                showArrow = settingsRepository.showArrow.first()
-            )
-            val fps = settingsRepository.fps.first().coerceIn(1, 5)
-            val engine = ChessEngineFactory.createEngine(this@ScreenCaptureService, engineSettings)
-            processor = ScreenFrameProcessor(engine).also { it.updateSettings(engineSettings) }
+            try {
+                val settingsRepository = ChessSettingsRepository(this@ScreenCaptureService)
+                if (!settingsRepository.enabled.first()) {
+                    ChessAssistantStatusBus.update(
+                        ChessAssistantState.Error("Fitur Chess Assistant dinonaktifkan di pengaturan")
+                    )
+                    stopSelf()
+                    return@launch
+                }
 
-            launch { collectProcessorState(engineSettings) }
-            withContext(Dispatchers.Main) { createVirtualDisplay() }
+                val engineSettings = EngineSettings(
+                    onlineEnabled = settingsRepository.onlineEnabled.first(),
+                    endpointUrl = settingsRepository.endpointUrl.first(),
+                    localFallback = settingsRepository.localFallback.first(),
+                    showEval = settingsRepository.showEval.first(),
+                    showArrow = settingsRepository.showArrow.first()
+                )
+                val fps = settingsRepository.fps.first().coerceIn(1, 5)
+                val engine = ChessEngineFactory.createEngine(this@ScreenCaptureService, engineSettings)
+                processor = ScreenFrameProcessor(engine).also { it.updateSettings(engineSettings) }
 
-            val frameDelayMs = 1000L / fps
-            while (isActive && isCapturing) {
-                withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(true) }
-                delay(90)
-                captureRequested.set(true)
-                delay(frameDelayMs)
+                launch { collectProcessorState(engineSettings) }
+                val displayCreated = withContext(Dispatchers.Main) { createVirtualDisplay() }
+                if (!displayCreated) {
+                    throw IllegalStateException("Virtual display gagal dibuat")
+                }
+
+                val frameDelayMs = 1000L / fps
+                while (isActive && isCapturing) {
+                    withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(true) }
+                    delay(90)
+                    captureRequested.set(true)
+                    delay(frameDelayMs)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                error.printStackTrace()
+                val message = error.message?.takeIf { it.isNotBlank() }
+                    ?: "Gagal memulai pembacaan layar"
+                ChessAssistantStatusBus.update(ChessAssistantState.Error(message))
+                withContext(Dispatchers.Main) {
+                    overlayManager?.showError(message)
+                }
+                stopSelf()
             }
         }
     }
@@ -193,56 +237,64 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    private fun createVirtualDisplay() {
-        val projection = mediaProjection ?: return
-        val metrics = resources.displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
-        val density = metrics.densityDpi
+    private fun createVirtualDisplay(): Boolean {
+        val projection = mediaProjection ?: return false
+        return try {
+            val metrics = resources.displayMetrics
+            val width = metrics.widthPixels
+            val height = metrics.heightPixels
+            val density = metrics.densityDpi
 
-        captureThread = HandlerThread("ChessScreenCapture").also { it.start() }
-        captureHandler = Handler(captureThread!!.looper)
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+            captureThread = HandlerThread("ChessScreenCapture").also { it.start() }
+            captureHandler = Handler(captureThread!!.looper)
+            imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
 
-        mediaProjectionCallback = object : MediaProjection.Callback() {
-            override fun onStop() {
-                ChessAssistantStatusBus.update(ChessAssistantState.Error("Perekaman layar dihentikan"))
-                stopSelf()
-            }
-        }.also { projection.registerCallback(it, Handler(mainLooper)) }
+            mediaProjectionCallback = object : MediaProjection.Callback() {
+                override fun onStop() {
+                    ChessAssistantStatusBus.update(
+                        ChessAssistantState.Error("Perekaman layar dihentikan")
+                    )
+                    stopSelf()
+                }
+            }.also { projection.registerCallback(it, Handler(mainLooper)) }
 
-        imageReader?.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            if (!captureRequested.compareAndSet(true, false)) {
-                image.close()
-                return@setOnImageAvailableListener
-            }
+            imageReader?.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+                if (!captureRequested.compareAndSet(true, false)) {
+                    image.close()
+                    return@setOnImageAvailableListener
+                }
 
-            val bitmap = try {
-                imageToBitmap(image, width, height)
-            } catch (error: Exception) {
-                error.printStackTrace()
-                null
-            } finally {
-                image.close()
-            }
+                val bitmap = try {
+                    imageToBitmap(image, width, height)
+                } catch (error: Exception) {
+                    error.printStackTrace()
+                    null
+                } finally {
+                    image.close()
+                }
 
-            serviceScope.launch {
-                withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(false) }
-                if (bitmap != null) processor?.processFrame(bitmap)
-            }
-        }, captureHandler)
+                serviceScope.launch {
+                    withContext(Dispatchers.Main) { overlayManager?.setCaptureSuppressed(false) }
+                    if (bitmap != null) processor?.processFrame(bitmap)
+                }
+            }, captureHandler)
 
-        virtualDisplay = projection.createVirtualDisplay(
-            "ChessScreenAssistant",
-            width,
-            height,
-            density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface,
-            null,
-            captureHandler
-        )
+            virtualDisplay = projection.createVirtualDisplay(
+                "ChessScreenAssistant",
+                width,
+                height,
+                density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface,
+                null,
+                captureHandler
+            )
+            virtualDisplay != null
+        } catch (error: Throwable) {
+            error.printStackTrace()
+            false
+        }
     }
 
     private fun imageToBitmap(image: Image, width: Int, height: Int): Bitmap {
