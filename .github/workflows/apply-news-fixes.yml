@@ -1,0 +1,314 @@
+name: Apply news response fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-news-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch Android news flow and image UI
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          view_model_path = Path('app/src/main/java/com/example/ui/chat/ChatViewModel.kt')
+          text = view_model_path.read_text(encoding='utf-8')
+
+          replacement = r'''    private suspend fun handleFirecrawlSearch(sessionId: Long, query: String, mode: String) {
+              _uiState.update { it.copy(isLoading = true, loadingText = if (mode == "berita") "Mencari berita tepercaya..." else "Searching with Vercel...") }
+
+              try {
+                  val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+                  val encodedMode = java.net.URLEncoder.encode(mode, "UTF-8")
+
+                  val request = Request.Builder()
+                      .url("https://chat-ai-lutfula.vercel.app/api/search?q=$encodedQuery&mode=$encodedMode")
+                      .get()
+                      .build()
+
+                  val response = okHttpClient.newCall(request).execute()
+                  val responseStr = response.body?.string()
+
+                  if (!response.isSuccessful || responseStr.isNullOrBlank()) {
+                      val message = if (mode == "berita") {
+                          "Data berita realtime belum tersedia. Saya tidak bisa memastikan kabar tersebut sekarang."
+                      } else {
+                          "Pencarian realtime gagal. HTTP ${response.code}."
+                      }
+                      chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = message))
+                      return
+                  }
+
+                  val jsonResponse = org.json.JSONObject(responseStr)
+                  val dataArray = jsonResponse.optJSONArray("data")
+                  if (dataArray == null || dataArray.length() == 0) {
+                      val message = if (mode == "berita") {
+                          "Saya belum menemukan artikel berita yang valid dan cukup tepercaya untuk menjawab pertanyaan itu."
+                      } else {
+                          "Tidak ditemukan hasil untuk: $query"
+                      }
+                      chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = message))
+                      return
+                  }
+
+                  if (mode == "berita") {
+                      val firstItem = dataArray.optJSONObject(0)
+                      val title = firstItem?.optString("title", "")?.trim().orEmpty()
+                      val description = firstItem?.optString("description", "")?.trim().orEmpty()
+                      val imageUrl = firstItem?.optString("imageUrl", null)
+                          ?.takeIf { it != "null" && it.startsWith("http") }
+                      val publishedAt = formatNewsDate(firstItem?.optString("publishedAt", "").orEmpty())
+                      val source = firstItem?.optString("source", "")?.trim().orEmpty()
+
+                      if (title.isBlank() || description.isBlank()) {
+                          chatRepository.insertMessage(
+                              MessageEntity(
+                                  sessionId = sessionId,
+                                  role = "assistant",
+                                  content = "Artikel ditemukan, tetapi keterangannya tidak cukup lengkap untuk ditampilkan sebagai berita yang dapat dipercaya."
+                              )
+                          )
+                          return
+                      }
+
+                      val fallback = buildString {
+                          append(title)
+                          append("\n\n")
+                          append(description)
+                          if (source.isNotBlank()) append("\n\nSumber: ").append(source)
+                          if (publishedAt.isNotBlank()) append("\nTerbit: ").append(publishedAt)
+                      }
+
+                      val generatedReply = generateNewsAnswer(
+                          query = query,
+                          title = title,
+                          description = description,
+                          source = source,
+                          publishedAt = publishedAt
+                      )
+                      val finalContent = sanitizeNewsReply(generatedReply ?: fallback)
+
+                      chatRepository.insertMessage(
+                          MessageEntity(
+                              sessionId = sessionId,
+                              role = "assistant",
+                              content = finalContent,
+                              articleImageUrl = imageUrl
+                          )
+                      )
+                  } else {
+                      val sb = StringBuilder("Hasil pencarian realtime untuk: $query\n\n")
+                      for (i in 0 until minOf(5, dataArray.length())) {
+                          val item = dataArray.optJSONObject(i) ?: continue
+                          val title = item.optString("title", "No Title")
+                          val description = item.optString("description", "")
+                          val url = item.optString("url", "")
+
+                          sb.append("${i + 1}. $title\n")
+                          if (description.isNotBlank()) sb.append("   $description\n")
+                          if (url.isNotBlank()) sb.append("   Sumber: $url\n")
+                          sb.append("\n")
+                      }
+                      chatRepository.insertMessage(
+                          MessageEntity(sessionId = sessionId, role = "assistant", content = sb.toString())
+                      )
+                  }
+              } catch (e: Exception) {
+                  val message = if (mode == "berita") {
+                      "Data berita realtime belum tersedia. Saya tidak bisa memastikan kabar tersebut sekarang."
+                  } else {
+                      "Pencarian realtime gagal mengambil data: ${e.message}"
+                  }
+                  chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = message))
+              } finally {
+                  _uiState.update { it.copy(isLoading = false, loadingText = null) }
+              }
+          }
+
+          private suspend fun generateNewsAnswer(
+              query: String,
+              title: String,
+              description: String,
+              source: String,
+              publishedAt: String
+          ): String? {
+              return try {
+                  val apiKey = settingsRepository.apiKey.first()
+                  val baseUrl = settingsRepository.baseUrl.first()
+                  val path = settingsRepository.textPath.first()
+                  val modelName = settingsRepository.model.first()
+                  if (apiKey.isBlank() || baseUrl.isBlank() || modelName.isBlank()) return null
+
+                  val endpoint = "${baseUrl.trimEnd('/')}${if (path.startsWith('/')) path else "/$path"}"
+                  val systemText = """
+                      Anda adalah asisten berita berbahasa Indonesia.
+                      Jawab hanya berdasarkan data artikel yang diberikan.
+                      Jelaskan inti peristiwa, konteks, dan alasan yang diketahui secara ringkas tetapi informatif.
+                      Jangan membuat fakta baru dan jangan menganggap judul sebagai bukti jika keterangannya tidak mendukung.
+                      Jangan pernah menampilkan URL, tautan, markdown link, atau tulisan 'Buka artikel'.
+                      Boleh menyebut nama media sebagai sumber dalam bentuk teks biasa.
+                  """.trimIndent()
+                  val userText = buildString {
+                      append("Pertanyaan pengguna: ").append(query)
+                      append("\n\nJudul artikel: ").append(title)
+                      append("\nKeterangan artikel: ").append(description)
+                      if (source.isNotBlank()) append("\nNama sumber: ").append(source)
+                      if (publishedAt.isNotBlank()) append("\nWaktu terbit: ").append(publishedAt)
+                  }
+
+                  val messages = listOf(
+                      com.example.network.ChatRequestMessage(
+                          role = "system",
+                          content = listOf(com.example.network.VisionContent(type = "text", text = systemText))
+                      ),
+                      com.example.network.ChatRequestMessage(
+                          role = "user",
+                          content = listOf(com.example.network.VisionContent(type = "text", text = userText))
+                      )
+                  )
+                  val reasoning = when (_uiState.value.mode) {
+                      ChatMode.THINK -> ReasoningConfig("medium")
+                      ChatMode.THINK_DEEPLY -> ReasoningConfig("high")
+                      ChatMode.NORMAL -> null
+                  }
+                  val requestBody = ChatRequest(model = modelName, messages = messages, reasoning = reasoning)
+                  val json = moshi.adapter(ChatRequest::class.java).toJson(requestBody)
+                  val request = Request.Builder()
+                      .url(endpoint)
+                      .addHeader("Authorization", "Bearer $apiKey")
+                      .addHeader("Content-Type", "application/json")
+                      .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                      .build()
+
+                  val response = okHttpClient.newCall(request).execute()
+                  val body = response.body?.string()
+                  if (!response.isSuccessful || body.isNullOrBlank()) return null
+                  moshi.adapter(ChatResponse::class.java)
+                      .fromJson(body)
+                      ?.choices
+                      ?.firstOrNull()
+                      ?.message
+                      ?.content
+                      ?.takeIf { it.isNotBlank() }
+              } catch (_: Exception) {
+                  null
+              }
+          }
+
+          private fun sanitizeNewsReply(input: String): String {
+              return input
+                  .replace(Regex("https?://\\S+", RegexOption.IGNORE_CASE), "")
+                  .replace(Regex("www\\.\\S+", RegexOption.IGNORE_CASE), "")
+                  .lines()
+                  .filterNot { line ->
+                      val trimmed = line.trim()
+                      trimmed.startsWith("Buka artikel", ignoreCase = true) ||
+                          trimmed.startsWith("Tautan", ignoreCase = true) ||
+                          trimmed.startsWith("Link", ignoreCase = true)
+                  }
+                  .joinToString("\n")
+                  .replace(Regex("\n{3,}"), "\n\n")
+                  .trim()
+          }
+
+          private fun formatNewsDate(raw: String): String {
+              if (raw.isBlank()) return ""
+              return try {
+                  val instant = java.time.Instant.parse(raw)
+                  java.time.format.DateTimeFormatter
+                      .ofPattern("d MMMM yyyy, HH:mm 'WIB'", java.util.Locale.forLanguageTag("id-ID"))
+                      .withZone(java.time.ZoneId.of("Asia/Jakarta"))
+                      .format(instant)
+              } catch (_: Exception) {
+                  raw.take(80)
+              }
+          }
+'''
+
+          pattern = re.compile(
+              r'    private suspend fun handleFirecrawlSearch\(sessionId: Long, query: String, mode: String\) \{.*?\n    private fun uriToBase64',
+              re.S,
+          )
+          patched, count = pattern.subn(lambda _: replacement + '\n    private fun uriToBase64', text)
+          if count != 1:
+              raise SystemExit(f'Expected one ChatViewModel replacement, got {count}')
+          view_model_path.write_text(patched, encoding='utf-8')
+
+          screen_path = Path('app/src/main/java/com/example/ui/chat/ChatScreen.kt')
+          screen = screen_path.read_text(encoding='utf-8')
+          old = '''            if (message.articleImageUrl != null) {
+                val context = LocalContext.current
+                AsyncImage(
+                    model = coil.request.ImageRequest.Builder(context)
+                        .data(message.articleImageUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Article image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .padding(bottom = if (message.content.isNotBlank()) 8.dp else 0.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(message.articleImageUrl))
+                            try { context.startActivity(intent) } catch (e: Exception) {}
+                        },
+                    contentScale = ContentScale.Crop
+                )
+            }
+'''
+          new = '''            if (message.articleImageUrl != null) {
+                val context = LocalContext.current
+                var articleImageFailed by remember(message.articleImageUrl) { mutableStateOf(false) }
+                if (!articleImageFailed) {
+                    AsyncImage(
+                        model = coil.request.ImageRequest.Builder(context)
+                            .data(message.articleImageUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Foto berita",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                            .padding(bottom = if (message.content.isNotBlank()) 8.dp else 0.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black),
+                        contentScale = ContentScale.Fit,
+                        onError = { articleImageFailed = true }
+                    )
+                }
+            }
+'''
+          if old not in screen:
+              raise SystemExit('Article image block was not found')
+          screen_path.write_text(screen.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Run focused unit tests
+        run: ./gradlew testDebugUnitTest --tests com.example.ui.chat.SearchDetectorTest
+
+      - name: Commit fixes and remove one-time workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-news-fixes.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/ui/chat/ChatViewModel.kt \
+                  app/src/main/java/com/example/ui/chat/ChatScreen.kt \
+                  .github/workflows/apply-news-fixes.yml
+          git commit -m "fix: summarize news with AI and improve article images"
+          git push origin main
