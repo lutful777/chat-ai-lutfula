@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.issue.title == '[automation] apply separate news cards'
+    if: github.event.issue.title == '[automation] diagnose separate news cards'
     runs-on: ubuntu-latest
 
     steps:
@@ -22,8 +22,11 @@ jobs:
 
       - name: Patch backend and Android news rendering
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 <<'PY'
+          set +e
+          python3 <<'PY' > /tmp/patch.log 2>&1
           from pathlib import Path
           import re
 
@@ -38,11 +41,13 @@ jobs:
 
           vm_path = Path('app/src/main/java/com/example/ui/chat/ChatViewModel.kt')
           vm = vm_path.read_text(encoding='utf-8')
-          vm = vm.replace(
-              'loadingText = "Searching with Vercel..."',
-              'loadingText = if (mode == "berita") "Mencari beberapa berita terbaru..." else "Searching with Vercel..."',
-              1
-          )
+          old_loading = 'loadingText = "Searching with Vercel..."'
+          if old_loading in vm:
+              vm = vm.replace(
+                  old_loading,
+                  'loadingText = if (mode == "berita") "Mencari beberapa berita terbaru..." else "Searching with Vercel..."',
+                  1
+              )
 
           pattern = re.compile(
               r'''                    if \(mode == "berita"\) \{.*?\n                    \} else \{''',
@@ -102,11 +107,33 @@ jobs:
               raise SystemExit(f'Expected one Android news block, replaced {count}')
           vm_path.write_text(vm, encoding='utf-8')
           PY
+          status=$?
+          if [ $status -ne 0 ]; then
+            printf 'Patch failed:\n\n```text\n' > /tmp/comment.txt
+            tail -n 120 /tmp/patch.log >> /tmp/comment.txt
+            printf '\n```\n' >> /tmp/comment.txt
+            gh issue comment "${{ github.event.issue.number }}" --body-file /tmp/comment.txt
+            exit $status
+          fi
 
           rm -f api/news-gallery.js package.json
+          rm -f .github/NEWS_CARD_MIGRATION_TRIGGER.md .github/NEWS_CARD_MIGRATION_TRIGGER_2.md
 
       - name: Run Android unit tests
-        run: ./gradlew testDebugUnitTest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          ./gradlew testDebugUnitTest > /tmp/gradle.log 2>&1
+          status=$?
+          if [ $status -ne 0 ]; then
+            printf 'Android tests failed:\n\n```text\n' > /tmp/comment.txt
+            tail -n 180 /tmp/gradle.log >> /tmp/comment.txt
+            printf '\n```\n' >> /tmp/comment.txt
+            gh issue comment "${{ github.event.issue.number }}" --body-file /tmp/comment.txt
+            exit $status
+          fi
 
       - name: Commit the fix
         shell: bash
@@ -119,7 +146,7 @@ jobs:
           git push origin main
 
       - name: Close trigger issue
-        if: always()
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue close "${{ github.event.issue.number }}" --comment "News cards automation finished."
+        run: gh issue close "${{ github.event.issue.number }}" --comment "Separate news cards applied and Android tests passed."
