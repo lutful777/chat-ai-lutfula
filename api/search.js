@@ -607,9 +607,7 @@ export default async function handler(req, res) {
       if (validArticles.length >= 5) break;
     }
 
-    const outputArticles = isBeritaMode
-      ? (await Promise.all(validArticles.map(translateNewsItemToIndonesian))).filter(Boolean)
-      : validArticles;
+    const outputArticles = validArticles;
 
     return res.status(200).json({
       query: targetUrl || q,
@@ -618,6 +616,9 @@ export default async function handler(req, res) {
       todayOnly: isBeritaMode && !allowOlder,
       allowOlder,
       translatedTo: isBeritaMode ? 'id' : null,
+      minimumRequested: isBeritaMode ? 5 : null,
+      returned: outputArticles.length,
+      completeMinimum: isBeritaMode ? outputArticles.length >= 5 : null,
       data: outputArticles
     });
   } catch (error) {
