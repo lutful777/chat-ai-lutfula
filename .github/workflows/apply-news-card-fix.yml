@@ -2,7 +2,7 @@ name: Apply separate news cards
 
 on:
   issues:
-    types: [opened]
+    types: [opened, reopened]
 
 permissions:
   contents: write
@@ -124,6 +124,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          chmod +x gradlew
           set +e
           ./gradlew testDebugUnitTest > /tmp/gradle.log 2>&1
           status=$?
