@@ -1,0 +1,51 @@
+name: Update chat link color to red
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/update-link-color-red.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update-color:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Change link color to bright red
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("app/src/main/java/com/example/ui/chat/ChatScreen.kt")
+          text = path.read_text(encoding="utf-8")
+          old = "val linkColor = Color(0xFF5AA9FF)"
+          new = "val linkColor = Color(0xFFFA0001)"
+
+          if old not in text and new not in text:
+              raise SystemExit("Link color declaration not found")
+
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit red link color
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/ui/chat/ChatScreen.kt
+
+          if git diff --cached --quiet; then
+            echo "Link color is already red."
+            exit 0
+          fi
+
+          git commit -m "style: change chat link color to red"
+          git push origin HEAD:main
