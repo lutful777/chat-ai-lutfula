@@ -815,7 +815,7 @@ fun MessageBubble(message: UiMessage) {
                         .padding(bottom = if (message.content.isNotBlank()) 8.dp else 0.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .clickable {
-                            val urlToOpen = message.articleUrl ?: message.articleImageUrl
+                            val urlToOpen = message.articleUrl ?: message.articleImageUrl!!
                             if (urlToOpen.startsWith("http://") || urlToOpen.startsWith("https://")) {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(urlToOpen))
                                 try { context.startActivity(intent) } catch (e: Exception) {}

@@ -773,7 +773,7 @@ class ChatViewModel(
                         for (i in 0 until dataArray.length()) {
                             val item = dataArray.optJSONObject(i) ?: continue
                             val url = item.optString("url", "")
-                            val imageUrl = item.optString("imageUrl", "")?.takeIf { it != "null" && it.isNotBlank() }
+                            val imageUrl = item.optString("imageUrl", "").takeIf { it.isNotBlank() && it != "null" }
                             
                             // Skip articles without photo and skip duplicates
                             if (imageUrl != null && url.isNotBlank() && !seenUrls.contains(url)) {

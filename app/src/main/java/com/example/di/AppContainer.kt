@@ -47,7 +47,6 @@ private val MIGRATION_7_8 = object : Migration(7, 8) {
                 "app_database"
             )
             .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
-            
             .build()
         }
         return _database!!

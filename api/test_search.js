@@ -1,6 +1,7 @@
 import { extractImage } from './search.js';
 import assert from 'assert';
 
+// Tests for image extraction
 // 1. artikel dengan og:image
 const html1 = '<meta property="og:image" content="https://example.com/image.jpg">';
 assert.strictEqual(extractImage(html1, {}), "https://example.com/image.jpg");

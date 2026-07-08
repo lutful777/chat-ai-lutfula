@@ -1,5 +1,6 @@
 import { URL } from 'url';
 
+// Utility for cleaning HTML text
 function cleanText(input) {
   return String(input || '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
