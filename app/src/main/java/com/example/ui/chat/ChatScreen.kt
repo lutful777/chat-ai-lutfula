@@ -941,7 +941,7 @@ private fun ClickableLinkText(
     color: Color = Color.White
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    val linkColor = MaterialTheme.colorScheme.primary
+    val linkColor = Color(0xFF5AA9FF)
     val annotatedText = remember(content, linkColor) {
         buildChatLinkText(content, linkColor)
     }
