@@ -20,6 +20,12 @@ object AppContainer {
     private var _memoryRepository: com.example.data.MemoryRepository? = null
     private var _localStorage: com.example.data.LocalStorage? = null
 
+private val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN articleUrl TEXT")
+        }
+    }
+
     private val MIGRATION_6_7 = object : Migration(6, 7) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE messages ADD COLUMN articleImageUrl TEXT")
@@ -40,7 +46,7 @@ object AppContainer {
                 AppDatabase::class.java,
                 "app_database"
             )
-            .addMigrations(MIGRATION_6_7)
+            .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
             .fallbackToDestructiveMigration()
             .build()
         }

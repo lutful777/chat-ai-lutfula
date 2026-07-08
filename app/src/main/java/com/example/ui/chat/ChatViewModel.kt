@@ -38,6 +38,7 @@ data class UiMessage(
     val content: String,
     val imageUri: String? = null,
     val articleImageUrl: String? = null,
+    val articleUrl: String? = null,
     val isError: Boolean = false
 )
 
@@ -108,7 +109,7 @@ class ChatViewModel(
             chatRepository.getMessagesForSession(sessionId).collect { messages ->
                 _uiState.update { state ->
                     if (state.currentSessionId == sessionId) {
-                         state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content, it.imageUri, it.articleImageUrl) })
+                         state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content, it.imageUri, it.articleImageUrl, it.articleUrl) })
                     } else state
                 }
             }
@@ -766,29 +767,50 @@ class ChatViewModel(
 
                 if (dataArray != null && dataArray.length() > 0) {
                     if (mode == "berita") {
-                        val firstItem = dataArray.optJSONObject(0)
-                        val title = firstItem?.optString("title", "No Title") ?: "No Title"
-                        val description = firstItem?.optString("description", "") ?: ""
-                        val url = firstItem?.optString("url", "") ?: ""
-                        val imageUrl = firstItem?.optString("imageUrl", null)?.takeIf { it != "null" && it.isNotBlank() }
-                        val publishedAt = firstItem?.optString("publishedAt", "") ?: ""
-                        val source = firstItem?.optString("source", "") ?: ""
+                        val validArticles = mutableListOf<org.json.JSONObject>()
+                        val seenUrls = mutableSetOf<String>()
                         
-                        val sb = StringBuilder()
-                        sb.append(title).append("\n\n")
-                        sb.append(description).append("\n\n")
-                        if (source.isNotBlank()) sb.append("Sumber: ").append(source).append("\n")
-                        if (publishedAt.isNotBlank()) sb.append("Terbit: ").append(publishedAt).append("\n")
-                        if (url.isNotBlank()) sb.append("Buka artikel: ").append(url)
+                        for (i in 0 until dataArray.length()) {
+                            val item = dataArray.optJSONObject(i) ?: continue
+                            val url = item.optString("url", "")
+                            val imageUrl = item.optString("imageUrl", null)?.takeIf { it != "null" && it.isNotBlank() }
+                            
+                            // Skip articles without photo and skip duplicates
+                            if (imageUrl != null && url.isNotBlank() && !seenUrls.contains(url)) {
+                                seenUrls.add(url)
+                                validArticles.add(item)
+                            }
+                            if (validArticles.size == 5) break
+                        }
+                        
+                        // Insert in reverse order so the first one appears at the bottom? Wait, 
+                        // if we want the 1st result at the bottom, we iterate downTo 0. 
+                        // If we want 1st result at top, we iterate normally? Let's just iterate backwards.
+                        for (i in validArticles.size - 1 downTo 0) {
+                            val item = validArticles[i]
+                            val title = item.optString("title", "No Title")
+                            val description = item.optString("description", "")
+                            val url = item.optString("url", "")
+                            val imageUrl = item.optString("imageUrl", null)
+                            val publishedAt = item.optString("publishedAt", "")
+                            val source = item.optString("source", "")
+                            
+                            val sb = StringBuilder()
+                            sb.append(title).append("\n\n")
+                            sb.append(description).append("\n\n")
+                            if (source.isNotBlank()) sb.append("Sumber: ").append(source).append("\n")
+                            if (publishedAt.isNotBlank()) sb.append("Terbit: ").append(publishedAt).append("\n")
 
-                        chatRepository.insertMessage(
-                            MessageEntity(
-                                sessionId = sessionId,
-                                role = "assistant",
-                                content = sb.toString(),
-                                articleImageUrl = imageUrl
+                            chatRepository.insertMessage(
+                                MessageEntity(
+                                    sessionId = sessionId,
+                                    role = "assistant",
+                                    content = sb.toString().trim(),
+                                    articleImageUrl = imageUrl,
+                                    articleUrl = url
+                                )
                             )
-                        )
+                        }
                     } else {
                         val sb = StringBuilder("Hasil pencarian realtime untuk: $query\n\n")
     
