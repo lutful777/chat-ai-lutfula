@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/search",
+      "destination": "/api/search-priority"
+    }
+  ],
+  "functions": {
+    "api/search-priority.js": {
+      "maxDuration": 60
+    }
+  }
+}
