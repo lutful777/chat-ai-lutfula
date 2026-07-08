@@ -1,0 +1,138 @@
+name: Prioritize trusted news sources
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/workflows/prioritize-news-sources.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update-news-sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add trusted-source priority and diversity
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("api/search.js")
+          text = path.read_text(encoding="utf-8")
+
+          helper_anchor = "function isBadSource(urlStr) {"
+          helpers = '''const PREFERRED_NEWS_SOURCES = [
+            { name: 'Reuters', hosts: ['reuters.com'] },
+            { name: 'Associated Press', hosts: ['apnews.com'] },
+            { name: 'BBC', hosts: ['bbc.com', 'bbc.co.uk'] },
+            { name: 'CNBC', hosts: ['cnbc.com', 'cnbcindonesia.com'] },
+            { name: 'Kompas', hosts: ['kompas.com'] },
+            { name: 'Tempo', hosts: ['tempo.co'] },
+            { name: 'Antara', hosts: ['antaranews.com'] }
+          ];
+
+          function preferredNewsSource(urlStr) {
+            try {
+              const host = new URL(urlStr).hostname.toLowerCase().replace(/^www\\./, '');
+              for (const source of PREFERRED_NEWS_SOURCES) {
+                if (source.hosts.some((domain) => host === domain || host.endsWith(`.${domain}`))) {
+                  return source;
+                }
+              }
+            } catch (_) {}
+            return null;
+          }
+
+          function prioritizeNewsRows(rows) {
+            const buckets = new Map(PREFERRED_NEWS_SOURCES.map((source) => [source.name, []]));
+            const otherRows = [];
+
+            for (const row of rows) {
+              const rowUrl = normalizedUrl(row?.url || row?.sourceURL || row?.metadata?.sourceURL || '');
+              const preferred = preferredNewsSource(rowUrl);
+              if (preferred) buckets.get(preferred.name).push(row);
+              else otherRows.push(row);
+            }
+
+            const prioritized = [];
+            let added = true;
+            while (added) {
+              added = false;
+              for (const source of PREFERRED_NEWS_SOURCES) {
+                const bucket = buckets.get(source.name);
+                if (bucket && bucket.length > 0) {
+                  prioritized.push(bucket.shift());
+                  added = true;
+                }
+              }
+            }
+
+            return prioritized.concat(otherRows);
+          }
+
+          function isBadSource(urlStr) {'''
+
+          if 'const PREFERRED_NEWS_SOURCES = [' not in text:
+              if helper_anchor not in text:
+                  raise SystemExit('isBadSource anchor not found')
+              text = text.replace(helper_anchor, helpers, 1)
+
+          source_anchor = '''function sourceLabelFromUrl(pageUrl, metadata) {
+            const explicit = cleanText('''
+          source_replacement = '''function sourceLabelFromUrl(pageUrl, metadata) {
+            const preferred = preferredNewsSource(pageUrl);
+            if (preferred) return preferred.name;
+
+            const explicit = cleanText('''
+          if 'if (preferred) return preferred.name;' not in text:
+              if source_anchor not in text:
+                  raise SystemExit('sourceLabelFromUrl anchor not found')
+              text = text.replace(source_anchor, source_replacement, 1)
+
+          rows_anchor = '''    const validArticles = [];
+              const seenUrls = new Set();'''
+          rows_replacement = '''    const prioritizedRows = isBeritaMode ? prioritizeNewsRows(rows) : rows;
+              const validArticles = [];
+              const seenUrls = new Set();'''
+          if 'const prioritizedRows = isBeritaMode ? prioritizeNewsRows(rows) : rows;' not in text:
+              if rows_anchor not in text:
+                  raise SystemExit('validArticles anchor not found')
+              text = text.replace(rows_anchor, rows_replacement, 1)
+
+          loop_anchor = '''    for (let index = 0; index < rows.length; index++) {
+              const row = rows[index] || {};'''
+          loop_replacement = '''    for (let index = 0; index < prioritizedRows.length; index++) {
+              const row = prioritizedRows[index] || {};'''
+          if loop_anchor in text:
+              text = text.replace(loop_anchor, loop_replacement, 1)
+          elif 'index < prioritizedRows.length' not in text:
+              raise SystemExit('news loop anchor not found')
+
+          metadata_anchor = '''      completeMinimum: isBeritaMode ? outputArticles.length >= 5 : null,
+              data: outputArticles'''
+          metadata_replacement = '''      completeMinimum: isBeritaMode ? outputArticles.length >= 5 : null,
+              preferredSources: isBeritaMode ? PREFERRED_NEWS_SOURCES.map((source) => source.name) : null,
+              data: outputArticles'''
+          if 'preferredSources:' not in text:
+              if metadata_anchor not in text:
+                  raise SystemExit('response metadata anchor not found')
+              text = text.replace(metadata_anchor, metadata_replacement, 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          node --check api/search.js
+
+      - name: Commit trusted-source priority
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/search.js
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "feat: prioritize trusted news sources"
+          git push origin HEAD:main
