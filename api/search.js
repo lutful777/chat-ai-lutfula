@@ -266,6 +266,57 @@ function allowsHistoricalNews(query) {
     /\b(?:pada|tanggal|tahun|bulan)\s+(?:januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|\d{1,4})\b/.test(text);
 }
 
+function sourceLabelFromUrl(pageUrl, metadata) {
+  const explicit = cleanText(
+    metadata?.siteName ||
+    metadata?.publisher ||
+    metadata?.['og:site_name'] ||
+    metadata?.['application-name'] ||
+    ''
+  );
+  if (explicit) return explicit.slice(0, 100);
+  try {
+    return new URL(pageUrl).hostname.replace(/^www\./i, '');
+  } catch (_) {
+    return '';
+  }
+}
+
+function dedupeNewsSentences(input) {
+  const sentences = cleanNewsText(input)
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const unique = [];
+  for (const sentence of sentences) {
+    const key = sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(sentence);
+  }
+  return unique.join(' ');
+}
+
+function extractCompleteNewsDescription(html, metadata) {
+  const parts = [];
+  const metaDescription = extractMetaDescription(html, metadata);
+  if (metaDescription) parts.push(metaDescription);
+
+  if (html) {
+    const paragraphs = [...html.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)];
+    for (const paragraph of paragraphs) {
+      const cleaned = cleanNewsText(paragraph[1]);
+      if (cleaned.length < 55) continue;
+      if (/cookie|privacy|login|subscribe|newsletter|advertisement|iklan/i.test(cleaned)) continue;
+      parts.push(cleaned);
+      if (parts.join(' ').length >= 900 || parts.length >= 4) break;
+    }
+  }
+
+  return shortNewsText(dedupeNewsSentences(parts.join(' ')), 760);
+}
+
 function hiddenNewsId(index) {
   return `news-item-${Date.now()}-${index + 1}`;
 }
@@ -328,7 +379,7 @@ async function translateTextToIndonesian(input, maxLength) {
 async function translateNewsItemToIndonesian(item) {
   const [titleResult, descriptionResult] = await Promise.all([
     translateTextToIndonesian(item.title, 180),
-    translateTextToIndonesian(item.description, 360)
+    translateTextToIndonesian(item.description, 760)
   ]);
 
   if (!titleResult.ok || !descriptionResult.ok) return null;
@@ -432,30 +483,52 @@ export default async function handler(req, res) {
       req.query.allowOlder === 'true' ||
       allowsHistoricalNews(q)
     );
-    const searchLimit = isBeritaMode ? 30 : 5;
+    const searchLimit = isBeritaMode ? 20 : 5;
     const searchUrl = 'https://' + ['api', 'firecrawl', 'dev'].join('.') + '/v1/search';
     const headers = { 'Content-Type': 'application/json' };
     headers[['Authori', 'zation'].join('')] = ['Bearer', token].join(' ');
-    const searchBody = { query: targetUrl || q, limit: searchLimit };
-    if (isBeritaMode && !allowOlder) searchBody.tbs = 'sbd:1,qdr:d';
+    const searchQueries = isBeritaMode
+      ? [...new Set([targetUrl || q, `${q} berita terbaru`, `${q} latest news today`])]
+      : [targetUrl || q];
+    const rows = [];
+    const discoveredUrls = new Set();
 
-    const searchResponse = await fetch(searchUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(searchBody)
-    });
-    const responseText = await searchResponse.text();
-    let json;
-    try { json = JSON.parse(responseText); } catch (_) { json = { raw: responseText }; }
-    if (!searchResponse.ok) {
-      return res.status(searchResponse.status).json({
-        error: 'Search provider failed',
-        status: searchResponse.status,
-        details: json
+    for (const searchQuery of searchQueries) {
+      const searchBody = { query: searchQuery, limit: searchLimit };
+      if (isBeritaMode && !allowOlder) searchBody.tbs = 'sbd:1,qdr:d';
+
+      const searchResponse = await fetch(searchUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(searchBody)
       });
+      const responseText = await searchResponse.text();
+      let json;
+      try { json = JSON.parse(responseText); } catch (_) { json = { raw: responseText }; }
+      if (!searchResponse.ok) continue;
+
+      const batch = Array.isArray(json.data) ? json.data : (Array.isArray(json.results) ? json.results : []);
+      for (const row of batch) {
+        const rowUrl = normalizedUrl(row?.url || row?.sourceURL || row?.metadata?.sourceURL || '');
+        if (!rowUrl || discoveredUrls.has(rowUrl)) continue;
+        discoveredUrls.add(rowUrl);
+        rows.push(row);
+      }
     }
 
-    const rows = Array.isArray(json.data) ? json.data : (Array.isArray(json.results) ? json.results : []);
+    if (rows.length === 0) {
+      return res.status(200).json({
+        query: targetUrl || q,
+        mode,
+        limit: searchLimit,
+        todayOnly: isBeritaMode && !allowOlder,
+        allowOlder,
+        translatedTo: isBeritaMode ? 'id' : null,
+        minimumRequested: isBeritaMode ? 5 : null,
+        returned: 0,
+        data: []
+      });
+    }
     const validArticles = [];
     const seenUrls = new Set();
     const now = Date.now();
@@ -477,8 +550,8 @@ export default async function handler(req, res) {
           firecrawlPage = await readPageWithFirecrawl(pageUrl, token);
           if (!firecrawlPage) continue;
           imageUrl = extractImage(firecrawlPage.html, firecrawlPage.metadata);
-          const metaDescription = extractMetaDescription(firecrawlPage.html, firecrawlPage.metadata);
-          if (metaDescription) description = metaDescription;
+          const completeDescription = extractCompleteNewsDescription(firecrawlPage.html, firecrawlPage.metadata);
+          if (completeDescription) description = completeDescription;
           publishedValue = extractPublishedValue(firecrawlPage.html, firecrawlPage.metadata, row);
         } catch (_) {
           continue;
@@ -501,20 +574,23 @@ export default async function handler(req, res) {
         if (!allowOlder && !isWithinLast24Hours(publishedTimestamp, now)) continue;
 
         const title = shortNewsText(row.title || row.metadata?.title || firecrawlPage?.metadata?.title || '', 180);
-        const summary = shortNewsText(description, 360);
-        if (!title || summary.length < 35) continue;
+        const summary = shortNewsText(dedupeNewsSentences(description), 760);
+        if (!title || summary.length < 80) continue;
 
-        seenUrls.add(pageUrl);
-        validArticles.push({
+        const translatedArticle = await translateNewsItemToIndonesian({
           title,
           description: summary,
           url: hiddenNewsId(validArticles.length),
           imageUrl,
           publishedAt: '',
-          source: '',
+          source: sourceLabelFromUrl(pageUrl, firecrawlPage?.metadata),
           reader,
           freshWithin24Hours: allowOlder ? null : true
         });
+        if (!translatedArticle) continue;
+
+        seenUrls.add(pageUrl);
+        validArticles.push(translatedArticle);
       } else {
         seenUrls.add(pageUrl);
         validArticles.push({
