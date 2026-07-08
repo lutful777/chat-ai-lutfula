@@ -119,14 +119,18 @@ jobs:
           rm -f api/news-gallery.js package.json
           rm -f .github/NEWS_CARD_MIGRATION_TRIGGER.md .github/NEWS_CARD_MIGRATION_TRIGGER_2.md
 
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
       - name: Run Android unit tests
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          chmod +x gradlew
           set +e
-          ./gradlew testDebugUnitTest > /tmp/gradle.log 2>&1
+          gradle testDebugUnitTest > /tmp/gradle.log 2>&1
           status=$?
           if [ $status -ne 0 ]; then
             printf 'Android tests failed:\n\n```text\n' > /tmp/comment.txt
