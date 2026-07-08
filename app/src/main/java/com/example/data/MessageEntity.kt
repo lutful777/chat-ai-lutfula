@@ -10,5 +10,6 @@ data class MessageEntity(
     val role: String,
     val content: String,
     val imageUri: String? = null,
+    val articleImageUrl: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )

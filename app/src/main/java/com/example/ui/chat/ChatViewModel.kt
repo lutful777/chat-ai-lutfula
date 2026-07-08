@@ -37,6 +37,7 @@ data class UiMessage(
     val role: String,
     val content: String,
     val imageUri: String? = null,
+    val articleImageUrl: String? = null,
     val isError: Boolean = false
 )
 
@@ -107,7 +108,7 @@ class ChatViewModel(
             chatRepository.getMessagesForSession(sessionId).collect { messages ->
                 _uiState.update { state ->
                     if (state.currentSessionId == sessionId) {
-                         state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content, it.imageUri) })
+                         state.copy(messages = messages.map { UiMessage(it.id.toString(), it.role, it.content, it.imageUri, it.articleImageUrl) })
                     } else state
                 }
             }
@@ -139,17 +140,6 @@ class ChatViewModel(
     fun setMode(mode: ChatMode) {
         _uiState.update { it.copy(mode = mode) }
         localStorage.saveChatMode(mode.name)
-    }
-
-    private fun getRealtimeSearchQuery(messageText: String): String? {
-        val text = messageText.trim()
-        val triggers = listOf("#berita", "#browser", "#cari")
-        for (trigger in triggers) {
-            if (text.lowercase().startsWith(trigger)) {
-                return text.substring(trigger.length).trim()
-            }
-        }
-        return null
     }
 
     private suspend fun handleMemoryCommand(messageText: String, sessionId: Long): Boolean {
@@ -641,7 +631,7 @@ class ChatViewModel(
                 chatMessages.add(makeMessage("user", finalUserMessage, imageUri, true))
 
                 // Check for Firecrawl search trigger
-                val searchQuery = getRealtimeSearchQuery(messageText)
+                val (searchQuery, searchMode) = SearchDetector.detectSearchModeAndQuery(messageText)
                 if (searchQuery != null && urlsInMessage.isEmpty()) {
                     if (searchQuery.isEmpty()) {
                         chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
@@ -649,7 +639,7 @@ class ChatViewModel(
                         return@launch
                     }
                     
-                    handleFirecrawlSearch(sessionId, searchQuery)
+                    handleFirecrawlSearch(sessionId, searchQuery, searchMode)
                     return@launch
                 }
                 
@@ -755,14 +745,15 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun handleFirecrawlSearch(sessionId: Long, query: String) {
+    private suspend fun handleFirecrawlSearch(sessionId: Long, query: String, mode: String) {
         _uiState.update { it.copy(isLoading = true, loadingText = "Searching with Vercel...") }
 
         try {
             val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val encodedMode = java.net.URLEncoder.encode(mode, "UTF-8")
 
             val request = Request.Builder()
-                .url("https://chat-ai-lutfula.vercel.app/api/search?q=$encodedQuery&mode=cari")
+                .url("https://chat-ai-lutfula.vercel.app/api/search?q=$encodedQuery&mode=$encodedMode")
                 .get()
                 .build()
 
@@ -774,33 +765,59 @@ class ChatViewModel(
                 val dataArray = jsonResponse.optJSONArray("data")
 
                 if (dataArray != null && dataArray.length() > 0) {
-                    val sb = StringBuilder("Hasil pencarian realtime untuk: $query\n\n")
+                    if (mode == "berita") {
+                        val firstItem = dataArray.optJSONObject(0)
+                        val title = firstItem?.optString("title", "No Title") ?: "No Title"
+                        val description = firstItem?.optString("description", "") ?: ""
+                        val url = firstItem?.optString("url", "") ?: ""
+                        val imageUrl = firstItem?.optString("imageUrl", null)?.takeIf { it != "null" && it.isNotBlank() }
+                        val publishedAt = firstItem?.optString("publishedAt", "") ?: ""
+                        val source = firstItem?.optString("source", "") ?: ""
+                        
+                        val sb = StringBuilder()
+                        sb.append(title).append("\n\n")
+                        sb.append(description).append("\n\n")
+                        if (source.isNotBlank()) sb.append("Sumber: ").append(source).append("\n")
+                        if (publishedAt.isNotBlank()) sb.append("Terbit: ").append(publishedAt).append("\n")
+                        if (url.isNotBlank()) sb.append("Buka artikel: ").append(url)
 
-                    for (i in 0 until minOf(5, dataArray.length())) {
-                        val item = dataArray.optJSONObject(i)
-                        if (item != null) {
-                            val title = item.optString("title", "No Title")
-                            val description = item.optString("description", "")
-                            val url = item.optString("url", "")
-
-                            sb.append("${i + 1}. $title\n")
-                            if (description.isNotBlank()) {
-                                sb.append("   $description\n")
-                            }
-                            if (url.isNotBlank()) {
-                                sb.append("   Sumber: $url\n")
-                            }
-                            sb.append("\n")
-                        }
-                    }
-
-                    chatRepository.insertMessage(
-                        MessageEntity(
-                            sessionId = sessionId,
-                            role = "assistant",
-                            content = sb.toString()
+                        chatRepository.insertMessage(
+                            MessageEntity(
+                                sessionId = sessionId,
+                                role = "assistant",
+                                content = sb.toString(),
+                                articleImageUrl = imageUrl
+                            )
                         )
-                    )
+                    } else {
+                        val sb = StringBuilder("Hasil pencarian realtime untuk: $query\n\n")
+    
+                        for (i in 0 until minOf(5, dataArray.length())) {
+                            val item = dataArray.optJSONObject(i)
+                            if (item != null) {
+                                val title = item.optString("title", "No Title")
+                                val description = item.optString("description", "")
+                                val url = item.optString("url", "")
+    
+                                sb.append("${i + 1}. $title\n")
+                                if (description.isNotBlank()) {
+                                    sb.append("   $description\n")
+                                }
+                                if (url.isNotBlank()) {
+                                    sb.append("   Sumber: $url\n")
+                                }
+                                sb.append("\n")
+                            }
+                        }
+    
+                        chatRepository.insertMessage(
+                            MessageEntity(
+                                sessionId = sessionId,
+                                role = "assistant",
+                                content = sb.toString()
+                            )
+                        )
+                    }
                 } else {
                     chatRepository.insertMessage(
                         MessageEntity(

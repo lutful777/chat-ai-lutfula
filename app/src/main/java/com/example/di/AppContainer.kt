@@ -10,12 +10,21 @@ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
 object AppContainer {
     private var _settingsRepository: SettingsRepository? = null
     private var _database: AppDatabase? = null
     private var _chatRepository: ChatRepository? = null
     private var _memoryRepository: com.example.data.MemoryRepository? = null
     private var _localStorage: com.example.data.LocalStorage? = null
+
+    private val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN articleImageUrl TEXT")
+        }
+    }
 
     fun getLocalStorage(context: Context): com.example.data.LocalStorage {
         if (_localStorage == null) {
@@ -30,7 +39,9 @@ object AppContainer {
                 context.applicationContext,
                 AppDatabase::class.java,
                 "app_database"
-            ).fallbackToDestructiveMigration(dropAllTables = true)
+            )
+            .addMigrations(MIGRATION_6_7)
+            .fallbackToDestructiveMigration()
             .build()
         }
         return _database!!

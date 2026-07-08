@@ -801,6 +801,27 @@ fun MessageBubble(message: UiMessage) {
                 )
             }
             
+            if (message.articleImageUrl != null) {
+                val context = LocalContext.current
+                AsyncImage(
+                    model = coil.request.ImageRequest.Builder(context)
+                        .data(message.articleImageUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Article image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .padding(bottom = if (message.content.isNotBlank()) 8.dp else 0.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(message.articleImageUrl))
+                            try { context.startActivity(intent) } catch (e: Exception) {}
+                        },
+                    contentScale = ContentScale.Crop
+                )
+            }
+            
             // Parsing logic using parseMessageContent
             val blocks = parseMessageContent(message.content, isUser)
             blocks.forEach { block ->

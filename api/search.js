@@ -32,11 +32,9 @@ async function readPageWithBrowserless(pageUrl) {
   const tokenName = 'BROWSERLESS' + '_TOKEN';
   const token = process.env[tokenName];
   if (!token || !pageUrl) return null;
-
   const base = process.env.BROWSERLESS_URL || 'https://chrome.browserless.io/content';
   const joiner = base.includes('?') ? '&' : '?';
   const endpoint = base + joiner + 'token=' + encodeURIComponent(token);
-
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -48,7 +46,6 @@ async function readPageWithBrowserless(pageUrl) {
       }
     })
   });
-
   if (!response.ok) return null;
   const html = await response.text();
   const text = shortText(html, 1200);
@@ -57,18 +54,17 @@ async function readPageWithBrowserless(pageUrl) {
     title: pageUrl,
     description: text,
     url: pageUrl,
-    reader: 'browserless'
+    reader: 'browserless',
+    html: html
   };
 }
 
 async function readPageWithFirecrawl(pageUrl, token) {
   if (!token || !pageUrl) return null;
-
   const url = 'https://' + ['api', 'firecrawl', 'dev'].join('.') + '/v1/scrape';
   const h = {};
   h['Content-Type'] = 'application/json';
   h[['Authori', 'zation'].join('')] = ['Bearer', token].join(' ');
-
   const response = await fetch(url, {
     method: 'POST',
     headers: h,
@@ -77,31 +73,46 @@ async function readPageWithFirecrawl(pageUrl, token) {
       formats: ['markdown', 'html']
     })
   });
-
   const t = await response.text();
   let j;
   try { j = JSON.parse(t); } catch (_) { j = { raw: t }; }
   if (!response.ok) return null;
-
   const data = j.data || j;
   const metadata = data.metadata || {};
   const description = data.markdown || data.content || data.html || j.markdown || j.html || '';
   const text = shortText(description, 1200);
   if (!text) return null;
-
   return {
     title: metadata.title || pageUrl,
     description: text,
     url: pageUrl,
-    reader: 'firecrawl-scrape'
+    reader: 'firecrawl-scrape',
+    metadata: metadata,
+    html: data.html
   };
+}
+
+function extractImage(html, metadata) {
+  if (metadata) {
+    if (metadata.ogImage) return normalizedUrl(metadata.ogImage);
+    if (metadata.twitterImage) return normalizedUrl(metadata.twitterImage);
+    if (metadata.image) return normalizedUrl(metadata.image);
+  }
+  if (!html) return null;
+  
+  const ogMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"[^>]*>/i) || html.match(/<meta[^>]*content="([^"]+)"[^>]*property="og:image"[^>]*>/i);
+  if (ogMatch && ogMatch[1]) return normalizedUrl(ogMatch[1]);
+  
+  const twitterMatch = html.match(/<meta[^>]*name="twitter:image"[^>]*content="([^"]+)"[^>]*>/i) || html.match(/<meta[^>]*content="([^"]+)"[^>]*name="twitter:image"[^>]*>/i);
+  if (twitterMatch && twitterMatch[1]) return normalizedUrl(twitterMatch[1]);
+  
+  return null;
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -125,7 +136,6 @@ export default async function handler(req, res) {
           data: [browserlessResult]
         });
       }
-
       const firecrawlPage = await readPageWithFirecrawl(targetUrl, token);
       if (firecrawlPage) {
         return res.status(200).json({
@@ -143,32 +153,49 @@ export default async function handler(req, res) {
     const h = {};
     h['Content-Type'] = 'application/json';
     h[['Authori', 'zation'].join('')] = ['Bearer', token].join(' ');
-
     const searchBody = { query: targetUrl || q, limit: searchLimit };
     if (isBeritaMode) searchBody.tbs = 'sbd:1,qdr:d';
-
+    
     const r = await fetch(url, {
       method: 'POST',
       headers: h,
       body: JSON.stringify(searchBody)
     });
-
     const t = await r.text();
     let j;
     try { j = JSON.parse(t); } catch (_) { j = { raw: t }; }
-
     if (!r.ok) return res.status(r.status).json({ error: 'Search provider failed', status: r.status, details: j });
 
     const rows = Array.isArray(j.data) ? j.data : (Array.isArray(j.results) ? j.results : []);
     const data = [];
 
+    let imageFound = false;
     for (let i = 0; i < rows.length; i++) {
       const x = rows[i] || {};
       const pageUrl = x.url || x.sourceURL || x.metadata?.sourceURL || '';
       let description = x.description || x.snippet || x.content || x.markdown || '';
       let reader = 'firecrawl-search';
+      
+      let imageUrl = null;
+      let sourceName = x.metadata?.source || new URL(pageUrl || 'https://example.com').hostname;
+      let publishedAt = x.metadata?.date || x.metadata?.publishedAt || '';
+      
+      if (isBeritaMode && !imageFound && i < 3 && pageUrl) {
+         try {
+           const fcPage = await readPageWithFirecrawl(pageUrl, token);
+           if (fcPage) {
+              imageUrl = extractImage(fcPage.html, fcPage.metadata);
+              if (imageUrl) imageFound = true;
+              if (fcPage.description && fcPage.description.length > cleanText(description).length) {
+                description = fcPage.description;
+              }
+              if (fcPage.metadata?.source) sourceName = fcPage.metadata.source;
+              if (fcPage.metadata?.date || fcPage.metadata?.publishedAt) publishedAt = fcPage.metadata.date || fcPage.metadata.publishedAt;
+           }
+         } catch (_) {}
+      }
 
-      if (i < 3 && pageUrl && cleanText(description).length < 120) {
+      if (!isBeritaMode && i < 3 && pageUrl && cleanText(description).length < 120) {
         try {
           const browserlessPage = await readPageWithBrowserless(pageUrl);
           if (browserlessPage && browserlessPage.description.length > cleanText(description).length) {
@@ -182,6 +209,9 @@ export default async function handler(req, res) {
         title: x.title || x.metadata?.title || 'No Title',
         description: shortText(description, 420),
         url: pageUrl,
+        imageUrl: imageUrl,
+        publishedAt: publishedAt,
+        source: sourceName,
         reader
       });
     }
@@ -191,3 +221,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Realtime search failed', message: e instanceof Error ? e.message : String(e) });
   }
 }
+export { extractImage };
