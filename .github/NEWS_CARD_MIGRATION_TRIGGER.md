@@ -1,1 +1,0 @@
-Temporary trigger marker. This file will be removed by the migration workflow.
