@@ -270,6 +270,78 @@ function hiddenNewsId(index) {
   return `news-item-${Date.now()}-${index + 1}`;
 }
 
+function looksIndonesian(input) {
+  const words = cleanText(input).toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
+  if (words.length === 0) return false;
+  const common = new Set([
+    'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'dengan', 'pada', 'ini', 'itu', 'adalah',
+    'akan', 'telah', 'tidak', 'dalam', 'sebagai', 'karena', 'setelah', 'saat', 'oleh', 'juga',
+    'hingga', 'terhadap', 'antara', 'menurut', 'baru', 'hari', 'berita', 'harga', 'pasar'
+  ]);
+  const score = words.reduce((total, word) => total + (common.has(word) ? 1 : 0), 0);
+  return score >= Math.min(2, Math.max(1, Math.floor(words.length / 8)));
+}
+
+async function translateTextToIndonesian(input, maxLength) {
+  const source = shortNewsText(input, maxLength);
+  if (!source) return { text: '', ok: false, detectedLanguage: '' };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const endpoint = new URL('https://translate.googleapis.com/translate_a/single');
+    endpoint.searchParams.set('client', 'gtx');
+    endpoint.searchParams.set('sl', 'auto');
+    endpoint.searchParams.set('tl', 'id');
+    endpoint.searchParams.set('dt', 't');
+    endpoint.searchParams.set('q', source);
+
+    const response = await fetch(endpoint, {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0'
+      }
+    });
+    if (!response.ok) throw new Error(`Translation HTTP ${response.status}`);
+
+    const data = await response.json();
+    const translated = Array.isArray(data?.[0])
+      ? data[0].map((part) => Array.isArray(part) ? (part[0] || '') : '').join('')
+      : '';
+    const detectedLanguage = typeof data?.[2] === 'string' ? data[2].toLowerCase() : '';
+    const cleaned = shortNewsText(translated, maxLength);
+
+    if (!cleaned) throw new Error('Translation returned empty text');
+    return { text: cleaned, ok: true, detectedLanguage };
+  } catch (_) {
+    return {
+      text: source,
+      ok: looksIndonesian(source),
+      detectedLanguage: looksIndonesian(source) ? 'id' : ''
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function translateNewsItemToIndonesian(item) {
+  const [titleResult, descriptionResult] = await Promise.all([
+    translateTextToIndonesian(item.title, 180),
+    translateTextToIndonesian(item.description, 360)
+  ]);
+
+  if (!titleResult.ok || !descriptionResult.ok) return null;
+  if (!titleResult.text || descriptionResult.text.length < 35) return null;
+
+  return {
+    ...item,
+    title: titleResult.text,
+    description: descriptionResult.text,
+    translatedTo: 'id'
+  };
+}
+
 async function readPageWithBrowserless(pageUrl) {
   const tokenName = 'BROWSERLESS' + '_TOKEN';
   const token = process.env[tokenName];
@@ -459,13 +531,18 @@ export default async function handler(req, res) {
       if (validArticles.length >= 5) break;
     }
 
+    const outputArticles = isBeritaMode
+      ? (await Promise.all(validArticles.map(translateNewsItemToIndonesian))).filter(Boolean)
+      : validArticles;
+
     return res.status(200).json({
       query: targetUrl || q,
       mode,
       limit: searchLimit,
       todayOnly: isBeritaMode && !allowOlder,
       allowOlder,
-      data: validArticles
+      translatedTo: isBeritaMode ? 'id' : null,
+      data: outputArticles
     });
   } catch (error) {
     return res.status(500).json({
@@ -481,5 +558,7 @@ export {
   extractPublishedValue,
   parsePublishedTimestamp,
   isWithinLast24Hours,
-  allowsHistoricalNews
+  allowsHistoricalNews,
+  translateTextToIndonesian,
+  translateNewsItemToIndonesian
 };
