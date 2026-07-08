@@ -11,6 +11,10 @@ assert.strictEqual(extractImage(html2, {}), null);
 
 // 3. URL gambar rusak (invalid url format)
 const html3 = '<meta property="og:image" content="not-a-url">';
-assert.strictEqual(extractImage(html3, {}), ""); // normalizedUrl returns '' for invalid URL
+assert.strictEqual(extractImage(html3, {}), null); // It should return null now since "" is falsy
+
+// 4. Logo/favicon ditolak
+const html4 = '<meta property="og:image" content="https://example.com/favicon.ico">';
+assert.strictEqual(extractImage(html4, {}), null);
 
 console.log("All API tests passed!");

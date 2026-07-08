@@ -773,7 +773,7 @@ class ChatViewModel(
                         for (i in 0 until dataArray.length()) {
                             val item = dataArray.optJSONObject(i) ?: continue
                             val url = item.optString("url", "")
-                            val imageUrl = item.optString("imageUrl", null)?.takeIf { it != "null" && it.isNotBlank() }
+                            val imageUrl = item.optString("imageUrl", "")?.takeIf { it != "null" && it.isNotBlank() }
                             
                             // Skip articles without photo and skip duplicates
                             if (imageUrl != null && url.isNotBlank() && !seenUrls.contains(url)) {
@@ -791,7 +791,7 @@ class ChatViewModel(
                             val title = item.optString("title", "No Title")
                             val description = item.optString("description", "")
                             val url = item.optString("url", "")
-                            val imageUrl = item.optString("imageUrl", null)
+                            val imageUrl = item.optString("imageUrl", "").takeIf { it.isNotBlank() && it != "null" }
                             val publishedAt = item.optString("publishedAt", "")
                             val source = item.optString("source", "")
                             
