@@ -99,7 +99,8 @@ async function fetchJsonWithTimeout(url, timeoutMs = 10000) {
       signal: controller.signal,
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'chat-ai-lutfula/1.0'
+        'User-Agent': 'chat-ai-lutfula/1.0',
+        'X-SOURCE-KEY': 'BX-AI-SKILL'
       }
     });
 
@@ -117,13 +118,13 @@ async function fetchJsonWithTimeout(url, timeoutMs = 10000) {
       throw error;
     }
 
-    if (Number(json?.code) !== 0) {
+    if (json?.code !== undefined && Number(json.code) !== 0) {
       const error = new Error(json?.msg || `BingX API error ${json?.code}`);
       error.isBusinessResponse = true;
       throw error;
     }
 
-    return json;
+    return json?.data ?? json;
   } finally {
     clearTimeout(timer);
   }
@@ -145,6 +146,14 @@ async function fetchAnnouncements(contentType) {
   }
 }
 
+function normalizeAnnouncementLink(input) {
+  const value = String(input || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/')) return `https://bingx.com${value}`;
+  return `https://bingx.com/${value.replace(/^\/+/, '')}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -158,16 +167,21 @@ export default async function handler(req, res) {
   const contentType = requestedType || contentTypeFromQuery(query);
 
   try {
-    const json = await fetchAnnouncements(contentType);
-    const announcements = Array.isArray(json?.data?.list) ? json.data.list : [];
+    const dataResponse = await fetchAnnouncements(contentType);
+    const announcements = Array.isArray(dataResponse?.list)
+      ? dataResponse.list
+      : Array.isArray(dataResponse)
+        ? dataResponse
+        : [];
     const seenLinks = new Set();
 
     const rawItems = announcements
       .map((item) => {
         const title = cleanText(item?.title);
-        const url = String(item?.link || '').trim();
-        if (!title || !/^https?:\/\//i.test(url) || seenLinks.has(url)) return null;
-        seenLinks.add(url);
+        const url = normalizeAnnouncementLink(item?.link);
+        const dedupeKey = url || title.toLowerCase();
+        if (!title || seenLinks.has(dedupeKey)) return null;
+        seenLinks.add(dedupeKey);
 
         return {
           title,
@@ -225,5 +239,6 @@ export {
   looksIndonesian,
   translateTextToIndonesian,
   contentTypeFromQuery,
-  fetchAnnouncements
+  fetchAnnouncements,
+  normalizeAnnouncementLink
 };
