@@ -24,6 +24,57 @@ function shortText(input, max = 700) {
   return text.slice(0, max).replace(/\s+\S*$/, '').trim() + '...';
 }
 
+function looksIndonesian(input) {
+  const words = cleanText(input).toLowerCase().split(/[^\p{L}]+/u).filter(Boolean);
+  if (words.length === 0) return false;
+
+  const commonWords = new Set([
+    'yang', 'dan', 'di', 'ke', 'dari', 'untuk', 'dengan', 'pada', 'ini', 'itu',
+    'akan', 'telah', 'tidak', 'dalam', 'sebagai', 'karena', 'setelah', 'saat',
+    'oleh', 'juga', 'hingga', 'pengumuman', 'perdagangan', 'listing', 'pengguna'
+  ]);
+  const score = words.reduce((total, word) => total + (commonWords.has(word) ? 1 : 0), 0);
+  return score >= Math.min(2, Math.max(1, Math.floor(words.length / 8)));
+}
+
+async function translateTextToIndonesian(input, maxLength) {
+  const source = shortText(input, maxLength);
+  if (!source || looksIndonesian(source)) return source;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const endpoint = new URL('https://translate.googleapis.com/translate_a/single');
+    endpoint.searchParams.set('client', 'gtx');
+    endpoint.searchParams.set('sl', 'auto');
+    endpoint.searchParams.set('tl', 'id');
+    endpoint.searchParams.set('dt', 't');
+    endpoint.searchParams.set('q', source);
+
+    const response = await fetch(endpoint, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Mozilla/5.0'
+      }
+    });
+
+    if (!response.ok) throw new Error(`Translation HTTP ${response.status}`);
+
+    const json = await response.json();
+    const translated = Array.isArray(json?.[0])
+      ? json[0].map((part) => Array.isArray(part) ? (part[0] || '') : '').join('')
+      : '';
+
+    return shortText(translated, maxLength) || source;
+  } catch (_) {
+    return source;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function contentTypeFromQuery(query) {
   const value = String(query || '').trim().toLowerCase();
 
@@ -111,19 +162,17 @@ export default async function handler(req, res) {
     const announcements = Array.isArray(json?.data?.list) ? json.data.list : [];
     const seenLinks = new Set();
 
-    const data = announcements
+    const rawItems = announcements
       .map((item) => {
         const title = cleanText(item?.title);
         const url = String(item?.link || '').trim();
         if (!title || !/^https?:\/\//i.test(url) || seenLinks.has(url)) return null;
         seenLinks.add(url);
 
-        const description = shortText(item?.content, 700) || `Pengumuman resmi BingX kategori ${cleanText(item?.type || contentType)}.`;
         return {
           title,
-          description,
+          description: shortText(item?.content, 700) || `Pengumuman resmi BingX kategori ${cleanText(item?.type || contentType)}.`,
           url,
-          imageUrl: null,
           publishedAt: cleanText(item?.time),
           source: 'BingX',
           type: cleanText(item?.type || contentType),
@@ -133,10 +182,29 @@ export default async function handler(req, res) {
       .filter(Boolean)
       .slice(0, MAX_ITEMS);
 
+    const data = await Promise.all(
+      rawItems.map(async (item) => {
+        const [title, description] = await Promise.all([
+          translateTextToIndonesian(item.title, 180),
+          translateTextToIndonesian(item.description, 700)
+        ]);
+
+        return {
+          ...item,
+          title,
+          description,
+          imageUrl: null,
+          translatedTo: 'id'
+        };
+      })
+    );
+
     return res.status(200).json({
       query: query || 'Pengumuman terbaru BingX',
       mode: 'bingx',
       contentType,
+      translatedTo: 'id',
+      includeImages: false,
       returned: data.length,
       data
     });
@@ -144,9 +212,18 @@ export default async function handler(req, res) {
     return res.status(502).json({
       error: 'BingX announcement API failed',
       message: error instanceof Error ? error.message : String(error),
+      translatedTo: 'id',
+      includeImages: false,
       data: []
     });
   }
 }
 
-export { cleanText, shortText, contentTypeFromQuery, fetchAnnouncements };
+export {
+  cleanText,
+  shortText,
+  looksIndonesian,
+  translateTextToIndonesian,
+  contentTypeFromQuery,
+  fetchAnnouncements
+};
