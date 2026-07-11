@@ -9,6 +9,9 @@
   "functions": {
     "api/search-priority.js": {
       "maxDuration": 60
+    },
+    "api/honcho-memory.js": {
+      "maxDuration": 60
     }
   }
 }
