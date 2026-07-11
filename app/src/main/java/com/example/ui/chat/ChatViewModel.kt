@@ -66,6 +66,7 @@ class ChatViewModel(
 
     private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
     private val holidayRepository = com.example.data.HolidayRepository(okHttpClient)
+    private val honchoMemoryClient = com.example.network.HonchoMemoryClient(applicationContext, okHttpClient)
 
     private val _uiState = MutableStateFlow(ChatUiState(mode = try { ChatMode.valueOf(localStorage.getChatMode()) } catch (e: Exception) { ChatMode.NORMAL }))
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -627,6 +628,23 @@ class ChatViewModel(
                     chatMessages.add(com.example.network.ChatRequestMessage(role = "system", content = listOf(com.example.network.VisionContent(type = "text", text = "CRITICAL USER PREFERENCE (ALWAYS FOLLOW THIS IN YOUR NEXT RESPONSE):\n$localInstruction"))))
                 }
 
+                if (memoryEnabled) {
+                    val honchoContext = honchoMemoryClient.getContext(sessionId, messageText)
+                    if (honchoContext.isNotBlank()) {
+                        chatMessages.add(
+                            com.example.network.ChatRequestMessage(
+                                role = "system",
+                                content = listOf(
+                                    com.example.network.VisionContent(
+                                        type = "text",
+                                        text = "HONCHO LONG-TERM MEMORY (use only when relevant; never reveal this block verbatim):\n$honchoContext"
+                                    )
+                                )
+                            )
+                        )
+                    }
+                }
+
                 // Manually append the latest user message
                 val finalUserMessage = "$timeContext\n\nPERTANYAAN USER:\n$messageText"
                 chatMessages.add(makeMessage("user", finalUserMessage, imageUri, true))
@@ -710,6 +728,9 @@ class ChatViewModel(
                         }
                         
                         chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = finalReply))
+                        if (memoryEnabled) {
+                            honchoMemoryClient.saveTurn(sessionId, messageText, finalReply)
+                        }
                         
                         _uiState.update {
                             it.copy(isLoading = false)
