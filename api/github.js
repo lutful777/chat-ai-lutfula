@@ -55,13 +55,12 @@ export default async function handler(req, res) {
         endpoint = '/' + endpoint;
     }
 
-    let token = process.env.GITHUB_TOKEN_Soprat123;
-    if (useLutfulToken === 'true' || (q && q.toLowerCase().includes('lutful'))) {
-       token = process.env.GITHUB_TOKEN_LUTFUL || token;
-    }
+    const token = process.env.GITHUB_TOKEN_Soprat123;
         
     if (!token) {
-         return res.status(500).json({ error: 'Server misconfiguration: GitHub token not set' });
+         return res.status(500).json({
+           error: 'Server misconfiguration: GITHUB_TOKEN_Soprat123 not set'
+         });
     }
 
     const queryParams = new URLSearchParams(otherParams).toString();
