@@ -1,5 +1,9 @@
 import java.net.URLEncoder
 
+val githubProxySecret = (System.getenv("APP_GITHUB_PROXY_SECRET") ?: "")
+  .replace("\\", "\\\\")
+  .replace("\"", "\\\"")
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -25,6 +29,12 @@ android {
     // versionCode 4, versionName "2.0"
     versionCode = 1
     versionName = "1.0"
+
+    buildConfigField(
+      "String",
+      "APP_GITHUB_PROXY_SECRET",
+      "\"$githubProxySecret\""
+    )
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -72,6 +82,7 @@ android {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  ignoreList.add("^APP_GITHUB_PROXY_SECRET$")
 }
 
 tasks.withType<Test> {
