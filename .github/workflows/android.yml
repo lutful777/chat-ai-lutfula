@@ -22,9 +22,9 @@ jobs:
 
     - name: Configure app secrets
       env:
-        GITHUB_PROXY_SECRET: ${{ secrets.GITHUB_PROXY_SECRET }}
+        APP_GITHUB_PROXY_SECRET: ${{ secrets.APP_GITHUB_PROXY_SECRET }}
       run: |
-        printf 'GITHUB_PROXY_SECRET="%s"\n' "$GITHUB_PROXY_SECRET" > .env
+        printf 'APP_GITHUB_PROXY_SECRET="%s"\n' "$APP_GITHUB_PROXY_SECRET" > .env
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
