@@ -287,6 +287,90 @@ class ChatViewModel(
                 var searchLinks = ""
                 
                 val textLower = messageText.lowercase()
+                val activeMode = _uiState.value.mode
+
+                if (activeMode == ChatMode.GITHUB) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Menghubungkan ke GitHub...") }
+                    val proxySecret = com.example.BuildConfig.GITHUB_PROXY_SECRET
+                    if (proxySecret.isBlank() || proxySecret == "YOUR_GITHUB_PROXY_SECRET") {
+                        chatRepository.insertMessage(
+                            MessageEntity(
+                                sessionId = sessionId,
+                                role = "assistant",
+                                content = "GITHUB_PROXY_SECRET belum dikonfigurasi pada build APK."
+                            )
+                        )
+                        _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                        return@launch
+                    }
+
+                    val githubAccount = if (
+                        textLower.contains("lutful777") ||
+                        textLower.contains("akun lutful") ||
+                        textLower.contains("token lutful")
+                    ) "lutful" else "soprat123"
+
+                    try {
+                        val githubBody = org.json.JSONObject()
+                            .put("query", messageText)
+                            .put("account", githubAccount)
+                            .toString()
+                            .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+                        val githubRequest = Request.Builder()
+                            .url("https://chat-ai-lutfula.vercel.app/api/github")
+                            .addHeader("Content-Type", "application/json")
+                            .addHeader("X-GitHub-Proxy-Secret", proxySecret)
+                            .post(githubBody)
+                            .build()
+
+                        val githubResponse = okHttpClient.newCall(githubRequest).execute()
+                        val githubResponseText = githubResponse.body?.string().orEmpty()
+                        if (!githubResponse.isSuccessful) {
+                            val message = try {
+                                org.json.JSONObject(githubResponseText).optString("error", githubResponseText)
+                            } catch (_: Exception) {
+                                githubResponseText
+                            }
+                            chatRepository.insertMessage(
+                                MessageEntity(
+                                    sessionId = sessionId,
+                                    role = "assistant",
+                                    content = "GitHub endpoint gagal. HTTP ${githubResponse.code}: $message"
+                                )
+                            )
+                            _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                            return@launch
+                        }
+
+                        val githubJson = org.json.JSONObject(githubResponseText)
+                        val githubContext = githubJson.optString("context")
+                        if (githubContext.isBlank()) {
+                            chatRepository.insertMessage(
+                                MessageEntity(
+                                    sessionId = sessionId,
+                                    role = "assistant",
+                                    content = "GitHub endpoint tidak mengembalikan data."
+                                )
+                            )
+                            _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                            return@launch
+                        }
+                        searchContext += githubContext + "\n\n"
+                        _uiState.update { it.copy(loadingText = null) }
+                    } catch (e: Exception) {
+                        chatRepository.insertMessage(
+                            MessageEntity(
+                                sessionId = sessionId,
+                                role = "assistant",
+                                content = "Gagal menghubungkan mode GitHub: ${e.message}"
+                            )
+                        )
+                        _uiState.update { it.copy(isLoading = false, loadingText = null) }
+                        return@launch
+                    }
+                }
+
                 val isGoldQuery = Regex("\\b(xau|gold|emas)\\b").containsMatchIn(textLower)
                 val isFiatQuery = Regex("\\b(usd|idr|eur|gbp|jpy|kurs|mata\\s*uang)\\b").containsMatchIn(textLower)
                 
@@ -446,7 +530,7 @@ class ChatViewModel(
                     useSearch = false
                 }
                 
-                if (urlsInMessage.isNotEmpty()) {
+                if (activeMode != ChatMode.GITHUB && urlsInMessage.isNotEmpty()) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking website...") }
                     val scrapeUrl = urlsInMessage.first()
                     try {
@@ -652,7 +736,7 @@ class ChatViewModel(
 
                 // Check for Firecrawl search trigger
                 val (searchQuery, searchMode) = SearchDetector.detectSearchModeAndQuery(messageText)
-                if (searchQuery != null && urlsInMessage.isEmpty()) {
+                if (activeMode != ChatMode.GITHUB && searchQuery != null && urlsInMessage.isEmpty()) {
                     if (searchQuery.isEmpty()) {
                         chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
                         _uiState.update { it.copy(isLoading = false) }
