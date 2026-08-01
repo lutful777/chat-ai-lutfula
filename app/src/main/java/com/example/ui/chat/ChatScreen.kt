@@ -386,10 +386,44 @@ fun ChatScreen(
                         }
                     }
                 }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 24.dp, end = 16.dp, top = 8.dp),
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else OutlineDark,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                viewModel.setMode(
+                                    if (uiState.mode == ChatMode.GITHUB) ChatMode.NORMAL
+                                    else ChatMode.GITHUB
+                                )
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "GitHub",
+                            color = if (uiState.mode == ChatMode.GITHUB) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+                        .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)
                         .background(MaterialTheme.colorScheme.surface, CircleShape)
                         .border(1.dp, OutlineDark, CircleShape)
                         .padding(start = 8.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
@@ -402,21 +436,6 @@ fun ChatScreen(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Icon(Icons.Filled.AttachFile, contentDescription = "Add file or photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            
-                            androidx.compose.foundation.layout.Box(
-                                modifier = Modifier
-                                    .padding(start = 4.dp)
-                                    .background(
-                                        color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else androidx.compose.ui.graphics.Color.Transparent,
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                    .clickable {
-                                        viewModel.setMode(if (uiState.mode == ChatMode.GITHUB) ChatMode.NORMAL else ChatMode.GITHUB)
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Text("GitHub", color = if (uiState.mode == ChatMode.GITHUB) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
 
                             DropdownMenu(
