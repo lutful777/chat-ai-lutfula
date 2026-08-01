@@ -19,6 +19,9 @@ const ALLOWED_REPOSITORIES = Object.freeze({
 const GITHUB_API = 'https://api.github.com';
 const MAX_FILE_CHARACTERS = 30000;
 const MAX_TREE_ITEMS = 2000;
+const MAX_ANALYSIS_FILES = 8;
+const MAX_ANALYSIS_FILE_CHARACTERS = 6000;
+const MAX_ANALYSIS_TOTAL_CHARACTERS = 30000;
 
 function encodeContentPath(path) {
   return String(path || '')
@@ -107,6 +110,21 @@ function selectReadEndpoint(query, requestedPath, ref, repository) {
       endpoint: `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
       kind: 'tree'
     };
+  }
+
+  if (
+    q.includes('baca repo') ||
+    q.includes('periksa repo') ||
+    q.includes('cek repo') ||
+    q.includes('analisis repo') ||
+    q.includes('cari error') ||
+    q.includes('temukan error') ||
+    q.includes('script yang error') ||
+    q.includes('kode yang error') ||
+    q.includes('perbaiki script') ||
+    q.includes('periksa kode')
+  ) {
+    return { kind: 'automatic-analysis' };
   }
 
   if (q.includes('commit')) {
@@ -203,6 +221,135 @@ function normalizeTree(data) {
   };
 }
 
+async function githubRead(endpoint, token) {
+  const response = await fetch(GITHUB_API + endpoint, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'Chat-AI-Lutfula-App'
+    }
+  });
+
+  const responseText = await response.text();
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch (_) {
+    data = { message: responseText };
+  }
+
+  if (!response.ok) {
+    const error = new Error(data?.message || 'GitHub API request failed');
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
+}
+
+function analysisCandidates(tree, query) {
+  const ignored = /(^|\/)(build|\.gradle|\.git|\.idea|node_modules|dist|coverage)(\/|$)/;
+  const textFile = /(^|\/)(readme[^/]*|dockerfile|makefile)$|\.(kt|kts|java|xml|gradle|properties|toml|js|mjs|cjs|ts|tsx|jsx|json|ya?ml|py|sh|md|html|css|sql|txt)$/i;
+  const queryWords = String(query || '')
+    .toLowerCase()
+    .split(/[^a-z0-9_.-]+/)
+    .filter(word => word.length > 2);
+
+  return tree
+    .filter(item => item?.type === 'blob' && item.path)
+    .filter(item => !ignored.test(item.path))
+    .filter(item => textFile.test(item.path))
+    .filter(item => !item.size || item.size <= 100000)
+    .map(item => {
+      const path = item.path.toLowerCase();
+      let score = 0;
+
+      for (const word of queryWords) {
+        if (path.includes(word)) score += 8;
+      }
+
+      if (/(^|\/)(readme|package\.json|settings\.gradle|settings\.gradle\.kts)$/i.test(item.path)) score += 10;
+      if (/(build\.gradle|build\.gradle\.kts|androidmanifest\.xml|vercel\.json|wrangler\.toml)$/i.test(item.path)) score += 9;
+      if (/(^|\/)(src|app|api|lib|server|functions)(\/|$)/i.test(item.path)) score += 4;
+      if (/test|spec/i.test(item.path)) score += 2;
+
+      return { ...item, score };
+    })
+    .sort((left, right) =>
+      right.score - left.score ||
+      (left.size || 0) - (right.size || 0) ||
+      left.path.localeCompare(right.path)
+    );
+}
+
+async function buildAutomaticAnalysis(repository, ref, query, token) {
+  const owner = repository.owner;
+  const repo = repository.repo;
+  const treeData = await githubRead(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+    token
+  );
+
+  const fullTree = Array.isArray(treeData.tree) ? treeData.tree : [];
+  const candidates = analysisCandidates(fullTree, query);
+  const selected = candidates.slice(0, MAX_ANALYSIS_FILES);
+
+  const loaded = await Promise.all(selected.map(async item => {
+    try {
+      const data = await githubRead(
+        `/repos/${owner}/${repo}/contents/${encodeContentPath(item.path)}?ref=${encodeURIComponent(ref)}`,
+        token
+      );
+
+      if (!data || data.type !== 'file' || data.encoding !== 'base64' || !data.content) {
+        return null;
+      }
+
+      const decoded = Buffer.from(
+        data.content.replace(/\s/g, ''),
+        'base64'
+      ).toString('utf8');
+
+      return {
+        path: item.path,
+        sha: item.sha,
+        size: item.size ?? decoded.length,
+        content: decoded.slice(0, MAX_ANALYSIS_FILE_CHARACTERS),
+        truncated: decoded.length > MAX_ANALYSIS_FILE_CHARACTERS
+      };
+    } catch (error) {
+      return {
+        path: item.path,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }));
+
+  const files = [];
+  let totalCharacters = 0;
+  for (const file of loaded.filter(Boolean)) {
+    const length = file.content?.length || 0;
+    if (totalCharacters + length > MAX_ANALYSIS_TOTAL_CHARACTERS) break;
+    files.push(file);
+    totalCharacters += length;
+  }
+
+  return {
+    mode: 'automatic-multi-file-read',
+    repository: repository.fullName,
+    ref,
+    readOnly: true,
+    totalRepositoryEntries: fullTree.length,
+    candidateTextFiles: candidates.length,
+    selectedFiles: files.map(file => file.path),
+    files,
+    instructions:
+      'Analisis file yang tersedia untuk menjawab pertanyaan. Sebutkan path file dan alasan konkret. Jangan mengklaim membaca file yang tidak tersedia.'
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -259,6 +406,35 @@ export default async function handler(req, res) {
       ref,
       repository
     );
+
+    if (selection.kind === 'automatic-analysis') {
+      try {
+        const analysis = await buildAutomaticAnalysis(
+          repository,
+          ref,
+          query,
+          token
+        );
+
+        return res.status(200).json({
+          repository: repository.fullName,
+          allowedRepositories: Object.keys(ALLOWED_REPOSITORIES),
+          readOnly: true,
+          tokenEnvironment: 'GITHUB_TOKEN_Soprat123',
+          kind: selection.kind,
+          ref,
+          data: analysis
+        });
+      } catch (error) {
+        return res.status(error?.status || 500).json({
+          error: 'Automatic GitHub analysis failed',
+          source: 'github',
+          status: error?.status || 500,
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
     const targetUrl = GITHUB_API + selection.endpoint;
 
     const response = await fetch(targetUrl, {
