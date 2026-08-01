@@ -413,7 +413,8 @@ class ChatViewModel(
                         if (response.isSuccessful && responseStr != null) {
                             searchContext += "Data dari GitHub API:\n" + (if (responseStr.length > 5000) responseStr.substring(0, 5000) + "..." else responseStr) + "\n\nInstruksi: Jawab berdasarkan data GitHub tersebut. Jangan berasumsi.\n"
                         } else {
-                            searchContext += "Pencarian GitHub gagal: ${response.code}\n\n"
+                            val errorDetail = responseStr?.take(2000) ?: "Tanpa detail dari server"
+                            searchContext += "GitHub gagal. HTTP ${response.code}. Detail server: ${errorDetail}\n\nInstruksi: Jelaskan error persis sesuai detail server. Jangan menebak token atau penyebab lain.\n"
                         }
                     } catch (e: Exception) {
                         searchContext += "Pencarian GitHub gagal: ${e.message}\n\n"

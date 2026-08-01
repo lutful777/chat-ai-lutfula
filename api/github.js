@@ -162,13 +162,24 @@ export default async function handler(req, res) {
       data = { message: responseText };
     }
 
-    if (response.ok && selection.kind === 'file') {
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: 'GitHub upstream request failed',
+        source: 'github',
+        tokenEnvironment: 'GITHUB_TOKEN_Soprat123',
+        status: response.status,
+        message: data?.message || 'Unknown GitHub API error'
+      });
+    }
+
+    if (selection.kind === 'file') {
       data = decodeGitHubFile(data);
     }
 
-    return res.status(response.status).json({
+    return res.status(200).json({
       repository: `${OWNER}/${REPO}`,
       readOnly: true,
+      tokenEnvironment: 'GITHUB_TOKEN_Soprat123',
       kind: selection.kind,
       path: selection.path || null,
       ref,
