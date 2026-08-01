@@ -386,34 +386,31 @@ fun ChatScreen(
                         }
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 24.dp, end = 16.dp, top = 8.dp),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    Box(
+                // Saat belum aktif, tombol GitHub tetap tersedia untuk mengaktifkan mode.
+                if (!uiState.isGitHubModeEnabled) {
+                    Row(
                         modifier = Modifier
-                            .background(
-                                color = if (uiState.isGitHubModeEnabled) PrimaryNeon else MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (uiState.isGitHubModeEnabled) PrimaryNeon else OutlineDark,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .clickable {
-                                viewModel.toggleGitHubMode()
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 16.dp, top = 8.dp),
+                        horizontalArrangement = Arrangement.Start
                     ) {
-                        Text(
-                            text = "GitHub",
-                            color = if (uiState.isGitHubModeEnabled) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .border(1.dp, OutlineDark, RoundedCornerShape(12.dp))
+                                .clickable { viewModel.toggleGitHubMode() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "GitHub",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
@@ -421,85 +418,117 @@ fun ChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)
-                        .background(MaterialTheme.colorScheme.surface, CircleShape)
-                        .border(1.dp, OutlineDark, CircleShape)
-                        .padding(start = 8.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-                    contentAlignment = Alignment.CenterStart
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(28.dp))
+                        .border(1.dp, OutlineDark, RoundedCornerShape(28.dp))
+                        .padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box {
-                            IconButton(
-                                onClick = { showAttachmentMenu = true },
-                                modifier = Modifier.size(36.dp)
+                    Column {
+                        // Status GitHub aktif ditampilkan di dalam kolom chat.
+                        if (uiState.isGitHubModeEnabled) {
+                            Row(
+                                modifier = Modifier
+                                    .clickable { viewModel.toggleGitHubMode() }
+                                    .padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Filled.AttachFile, contentDescription = "Add file or photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-
-                            DropdownMenu(
-                                expanded = showAttachmentMenu,
-                                onDismissRequest = { showAttachmentMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Pilih Foto dari Galeri") },
-                                    onClick = {
-                                        showAttachmentMenu = false
-                                        imagePickerLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                    },
-                                    leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Pilih File") },
-                                    onClick = {
-                                        showAttachmentMenu = false
-                                        filePickerLauncher.launch(arrayOf("*/*"))
-                                    },
-                                    leadingIcon = { Icon(Icons.Filled.Description, contentDescription = null) }
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .background(Color.White, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "●",
+                                        color = Color.Black,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "GitHub",
+                                    color = PrimaryBlue,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        BasicTextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            modifier = Modifier.weight(1f),
-                            textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-                            cursorBrush = SolidColor(Color.White),
-                            decorationBox = { innerTextField ->
-                                if (inputText.isEmpty()) {
-                                    Text(if (uiState.isGitHubModeEnabled) "Ask about GitHub..." else "Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                IconButton(
+                                    onClick = { showAttachmentMenu = true },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Filled.AttachFile, contentDescription = "Add file or photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                innerTextField()
-                            },
-                            enabled = !uiState.isLoading
-                        )
-                        
-                        if (inputText.isBlank() && selectedFileUri == null) {
-                            Icon(
-                                imageVector = Icons.Filled.Mic,
-                                contentDescription = "Mic",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp).clickable {
-                                    if (androidx.core.content.ContextCompat.checkSelfPermission(localContext, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        android.widget.Toast.makeText(localContext, "Voice input ready.", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        showMicPermissionDialog = true
+
+                                DropdownMenu(
+                                    expanded = showAttachmentMenu,
+                                    onDismissRequest = { showAttachmentMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Pilih Foto dari Galeri") },
+                                        onClick = {
+                                            showAttachmentMenu = false
+                                            imagePickerLauncher.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                        },
+                                        leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Pilih File") },
+                                        onClick = {
+                                            showAttachmentMenu = false
+                                            filePickerLauncher.launch(arrayOf("*/*"))
+                                        },
+                                        leadingIcon = { Icon(Icons.Filled.Description, contentDescription = null) }
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            BasicTextField(
+                                value = inputText,
+                                onValueChange = { inputText = it },
+                                modifier = Modifier.weight(1f),
+                                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                                cursorBrush = SolidColor(Color.White),
+                                decorationBox = { innerTextField ->
+                                    if (inputText.isEmpty()) {
+                                        Text(if (uiState.isGitHubModeEnabled) "Ask about GitHub..." else "Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
-                                }
+                                    innerTextField()
+                                },
+                                enabled = !uiState.isLoading
                             )
-                        } else {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = PrimaryNeon,
-                                modifier = Modifier.size(24.dp).clickable {
-                                    if ((inputText.isNotBlank() || selectedFileUri != null) && !uiState.isLoading) {
-                                        viewModel.sendMessage(inputText, selectedFileUri?.toString())
-                                        inputText = ""
-                                        selectedFileUri = null
-                                        selectedFileName = null
+
+                            if (inputText.isBlank() && selectedFileUri == null) {
+                                Icon(
+                                    imageVector = Icons.Filled.Mic,
+                                    contentDescription = "Mic",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp).clickable {
+                                        if (androidx.core.content.ContextCompat.checkSelfPermission(localContext, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                            android.widget.Toast.makeText(localContext, "Voice input ready.", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            showMicPermissionDialog = true
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = PrimaryNeon,
+                                    modifier = Modifier.size(24.dp).clickable {
+                                        if ((inputText.isNotBlank() || selectedFileUri != null) && !uiState.isLoading) {
+                                            viewModel.sendMessage(inputText, selectedFileUri?.toString())
+                                            inputText = ""
+                                            selectedFileUri = null
+                                            selectedFileName = null
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
