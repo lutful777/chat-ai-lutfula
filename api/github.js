@@ -35,7 +35,11 @@ function normalizePath(path) {
 }
 
 function pathFromQuery(query) {
-  const text = String(query || '').trim();
+  let text = String(query || '').trim();
+
+  for (const fullName of Object.keys(ALLOWED_REPOSITORIES)) {
+    text = text.replace(new RegExp(fullName.replace('/', '\\/'), 'ig'), ' ');
+  }
 
   const labelled = text.match(
     /(?:file|berkas|folder|direktori)\s+[`"']?([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.?[A-Za-z0-9_-]*)[`"']?/i
