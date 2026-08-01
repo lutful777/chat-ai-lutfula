@@ -2,6 +2,8 @@ const OWNER = 'lutful777';
 const REPO = 'chat-ai-lutfula';
 const DEFAULT_REF = 'main';
 const GITHUB_API = 'https://api.github.com';
+const MAX_FILE_CHARACTERS = 30000;
+const MAX_TREE_ITEMS = 2000;
 
 function encodeContentPath(path) {
   return String(path || '')
@@ -21,12 +23,12 @@ function pathFromQuery(query) {
   const text = String(query || '').trim();
 
   const labelled = text.match(
-    /(?:file|berkas)\s+[`"']?([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.[A-Za-z0-9_-]+)[`"']?/i
+    /(?:file|berkas|folder|direktori)\s+[`"']?([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.?[A-Za-z0-9_-]*)[`"']?/i
   );
   if (labelled) return normalizePath(labelled[1]);
 
   const pathLike = text.match(
-    /\b([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+\.[A-Za-z0-9_-]+)\b/
+    /\b([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+(?:\.[A-Za-z0-9_-]+)?)\b/
   );
   return normalizePath(pathLike?.[1] || '');
 }
@@ -35,11 +37,34 @@ function selectReadEndpoint(query, requestedPath, ref) {
   const q = String(query || '').toLowerCase();
   const filePath = normalizePath(requestedPath) || pathFromQuery(query);
 
+  if (
+    q.includes('username') ||
+    q.includes('akun token') ||
+    q.includes('siapa pemilik token') ||
+    q.includes('cek koneksi') ||
+    q.includes('cek apakah konek')
+  ) {
+    return { endpoint: '/user', kind: 'authenticated-user' };
+  }
+
   if (filePath) {
     return {
       endpoint: `/repos/${OWNER}/${REPO}/contents/${encodeContentPath(filePath)}?ref=${encodeURIComponent(ref)}`,
-      kind: 'file',
+      kind: 'content',
       path: filePath
+    };
+  }
+
+  if (
+    q.includes('struktur repo') ||
+    q.includes('seluruh file') ||
+    q.includes('semua file') ||
+    q.includes('daftar file') ||
+    q.includes('tree repo')
+  ) {
+    return {
+      endpoint: `/repos/${OWNER}/${REPO}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+      kind: 'tree'
     };
   }
 
@@ -71,14 +96,33 @@ function selectReadEndpoint(query, requestedPath, ref) {
   return { endpoint: `/repos/${OWNER}/${REPO}`, kind: 'repository' };
 }
 
-function decodeGitHubFile(data) {
-  if (!data || Array.isArray(data) || data.type !== 'file') return data;
+function normalizeGitHubContent(data) {
+  if (Array.isArray(data)) {
+    return data.map(item => ({
+      name: item.name,
+      path: item.path,
+      sha: item.sha,
+      size: item.size,
+      type: item.type,
+      html_url: item.html_url
+    }));
+  }
+
+  if (!data || data.type !== 'file') return data;
   if (data.encoding !== 'base64' || typeof data.content !== 'string') return data;
 
-  const decodedContent = Buffer.from(
+  let decodedContent = Buffer.from(
     data.content.replace(/\s/g, ''),
     'base64'
   ).toString('utf8');
+
+  let truncated = false;
+  if (decodedContent.length > MAX_FILE_CHARACTERS) {
+    decodedContent =
+      decodedContent.slice(0, MAX_FILE_CHARACTERS) +
+      '\n\n[Isi file dipotong karena terlalu panjang]';
+    truncated = true;
+  }
 
   return {
     name: data.name,
@@ -87,8 +131,34 @@ function decodeGitHubFile(data) {
     size: data.size,
     type: data.type,
     encoding: 'utf-8',
+    truncated,
     content: decodedContent,
     html_url: data.html_url
+  };
+}
+
+function normalizeTree(data) {
+  if (!data || !Array.isArray(data.tree)) return data;
+
+  const ignored = /(^|\/)(build|\.gradle|\.git|\.idea|node_modules)(\/|$)/;
+  const binary = /\.(png|jpe?g|webp|gif|apk|jar|aar|zip|so|jks|keystore|ttf|ico)$/i;
+
+  const tree = data.tree
+    .filter(item => item?.path && !ignored.test(item.path))
+    .filter(item => item.type !== 'blob' || !binary.test(item.path))
+    .slice(0, MAX_TREE_ITEMS)
+    .map(item => ({
+      path: item.path,
+      type: item.type,
+      size: item.size ?? null,
+      sha: item.sha
+    }));
+
+  return {
+    sha: data.sha,
+    truncated: Boolean(data.truncated) || data.tree.length > MAX_TREE_ITEMS,
+    returned: tree.length,
+    tree
   };
 }
 
@@ -172,8 +242,10 @@ export default async function handler(req, res) {
       });
     }
 
-    if (selection.kind === 'file') {
-      data = decodeGitHubFile(data);
+    if (selection.kind === 'content') {
+      data = normalizeGitHubContent(data);
+    } else if (selection.kind === 'tree') {
+      data = normalizeTree(data);
     }
 
     return res.status(200).json({

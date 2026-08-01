@@ -411,7 +411,7 @@ class ChatViewModel(
                         val response = okHttpClient.newCall(request).execute()
                         val responseStr = response.body?.string()
                         if (response.isSuccessful && responseStr != null) {
-                            searchContext += "Data dari GitHub API:\n" + (if (responseStr.length > 5000) responseStr.substring(0, 5000) + "..." else responseStr) + "\n\nInstruksi: Jawab berdasarkan data GitHub tersebut. Jangan berasumsi.\n"
+                            searchContext += "Data dari GitHub API:\n" + (if (responseStr.length > 30000) responseStr.substring(0, 30000) + "\n[Respons GitHub dipotong]" else responseStr) + "\n\nInstruksi: Jawab berdasarkan data GitHub tersebut. Jangan berasumsi.\n"
                         } else {
                             val errorDetail = responseStr?.take(2000) ?: "Tanpa detail dari server"
                             searchContext += "GitHub gagal. HTTP ${response.code}. Detail server: ${errorDetail}\n\nInstruksi: Jelaskan error persis sesuai detail server. Jangan menebak token atau penyebab lain.\n"
