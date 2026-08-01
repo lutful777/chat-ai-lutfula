@@ -31,4 +31,12 @@ class LocalStorage(context: Context) {
     fun getChatMode(): String {
         return prefs.getString("chat_mode", "NORMAL") ?: "NORMAL"
     }
+
+    fun saveGitHubModeEnabled(enabled: Boolean): Boolean {
+        return prefs.edit().putBoolean("github_mode_enabled", enabled).commit()
+    }
+
+    fun getGitHubModeEnabled(): Boolean {
+        return prefs.getBoolean("github_mode_enabled", false)
+    }
 }

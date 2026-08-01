@@ -29,7 +29,7 @@ import kotlinx.coroutines.flow.map
 import com.google.mlkit.nl.languageid.LanguageIdentification
 
 enum class ChatMode {
-    NORMAL, THINK, THINK_DEEPLY, GITHUB
+    NORMAL, THINK, THINK_DEEPLY
 }
 
 data class UiMessage(
@@ -51,7 +51,8 @@ data class ChatUiState(
     val isLoading: Boolean = false,
     val loadingText: String? = null,
     val error: String? = null,
-    val mode: ChatMode = ChatMode.NORMAL
+    val mode: ChatMode = ChatMode.NORMAL,
+    val isGitHubModeEnabled: Boolean = false
 )
 
 class ChatViewModel(
@@ -67,7 +68,20 @@ class ChatViewModel(
     private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
     private val holidayRepository = com.example.data.HolidayRepository(okHttpClient)
 
-    private val _uiState = MutableStateFlow(ChatUiState(mode = try { ChatMode.valueOf(localStorage.getChatMode()) } catch (e: Exception) { ChatMode.NORMAL }))
+    private val savedChatMode = localStorage.getChatMode()
+    private val initialReasoningMode = when (savedChatMode) {
+        ChatMode.THINK.name -> ChatMode.THINK
+        ChatMode.THINK_DEEPLY.name -> ChatMode.THINK_DEEPLY
+        else -> ChatMode.NORMAL
+    }
+
+    private val _uiState = MutableStateFlow(
+        ChatUiState(
+            mode = initialReasoningMode,
+            isGitHubModeEnabled =
+                localStorage.getGitHubModeEnabled() || savedChatMode == "GITHUB"
+        )
+    )
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private var messageJob: kotlinx.coroutines.Job? = null
@@ -141,6 +155,12 @@ class ChatViewModel(
     fun setMode(mode: ChatMode) {
         _uiState.update { it.copy(mode = mode) }
         localStorage.saveChatMode(mode.name)
+    }
+
+    fun toggleGitHubMode() {
+        val enabled = !_uiState.value.isGitHubModeEnabled
+        _uiState.update { it.copy(isGitHubModeEnabled = enabled) }
+        localStorage.saveGitHubModeEnabled(enabled)
     }
 
     private suspend fun handleMemoryCommand(messageText: String, sessionId: Long): Boolean {
@@ -399,7 +419,7 @@ class ChatViewModel(
                     }
                 }
                 
-                if (_uiState.value.mode == ChatMode.GITHUB) {
+                if (_uiState.value.isGitHubModeEnabled) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Fetching GitHub...") }
                     try {
                         val encodedQuery = java.net.URLEncoder.encode(messageText, "UTF-8")
@@ -520,7 +540,7 @@ class ChatViewModel(
                 var systemPrompt = when (mode) {
                     ChatMode.NORMAL -> "You are a helpful AI assistant. Provide fast, simple, and direct answers."
                     ChatMode.THINK -> "You are a helpful AI assistant. Approach tasks with careful reasoning and thorough checking. Explain your thought process."
-                    ChatMode.THINK_DEEPLY, ChatMode.GITHUB -> "You are a helpful AI assistant. Provide deeper analysis, detailed debugging, and exhaustive step-by-step reasoning. You are better for coding and complex tasks."
+                    ChatMode.THINK_DEEPLY -> "You are a helpful AI assistant. Provide deeper analysis, detailed debugging, and exhaustive step-by-step reasoning. You are better for coding and complex tasks."
                 }
                 
                 if (langPref == "id") {
@@ -687,7 +707,7 @@ class ChatViewModel(
                 val reasoning = if (enableReasoningParameter) {
                     when (mode) {
                         ChatMode.THINK -> ReasoningConfig("medium")
-                        ChatMode.THINK_DEEPLY, ChatMode.GITHUB -> ReasoningConfig("high")
+                        ChatMode.THINK_DEEPLY -> ReasoningConfig("high")
                         ChatMode.NORMAL -> null
                     }
                 } else null

@@ -395,25 +395,22 @@ fun ChatScreen(
                     Box(
                         modifier = Modifier
                             .background(
-                                color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else MaterialTheme.colorScheme.surface,
+                                color = if (uiState.isGitHubModeEnabled) PrimaryNeon else MaterialTheme.colorScheme.surface,
                                 shape = RoundedCornerShape(12.dp)
                             )
                             .border(
                                 width = 1.dp,
-                                color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else OutlineDark,
+                                color = if (uiState.isGitHubModeEnabled) PrimaryNeon else OutlineDark,
                                 shape = RoundedCornerShape(12.dp)
                             )
                             .clickable {
-                                viewModel.setMode(
-                                    if (uiState.mode == ChatMode.GITHUB) ChatMode.NORMAL
-                                    else ChatMode.GITHUB
-                                )
+                                viewModel.toggleGitHubMode()
                             }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Text(
                             text = "GitHub",
-                            color = if (uiState.mode == ChatMode.GITHUB) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (uiState.isGitHubModeEnabled) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -469,7 +466,7 @@ fun ChatScreen(
                             cursorBrush = SolidColor(Color.White),
                             decorationBox = { innerTextField ->
                                 if (inputText.isEmpty()) {
-                                    Text(if (uiState.mode == ChatMode.GITHUB) "Ask about GitHub..." else "Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(if (uiState.isGitHubModeEnabled) "Ask about GitHub..." else "Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 innerTextField()
                             },
