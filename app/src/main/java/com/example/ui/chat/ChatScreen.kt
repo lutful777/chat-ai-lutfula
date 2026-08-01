@@ -426,6 +426,36 @@ fun ChatScreen(
                             }
                         }
                         Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (uiState.mode == ChatMode.GITHUB) PrimaryNeon.copy(alpha = 0.18f)
+                                    else Color.Transparent
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else OutlineDark,
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable {
+                                    viewModel.setMode(
+                                        if (uiState.mode == ChatMode.GITHUB) ChatMode.NORMAL
+                                        else ChatMode.GITHUB
+                                    )
+                                }
+                                .padding(horizontal = 9.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "GitHub",
+                                color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                         BasicTextField(
                             value = inputText,
                             onValueChange = { inputText = it },
@@ -434,7 +464,11 @@ fun ChatScreen(
                             cursorBrush = SolidColor(Color.White),
                             decorationBox = { innerTextField ->
                                 if (inputText.isEmpty()) {
-                                    Text("Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        if (uiState.mode == ChatMode.GITHUB) "Ask about GitHub..."
+                                        else "Ask anything...",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                                 innerTextField()
                             },
@@ -579,6 +613,7 @@ fun ChatScreen(
             val modeText = when (currentMode) {
                 ChatMode.THINK -> "Think ▼"
                 ChatMode.THINK_DEEPLY -> "Think Deeply ▼"
+                ChatMode.GITHUB -> "GitHub ▼"
                 else -> "Normal ▼"
             }
 
@@ -622,6 +657,13 @@ fun ChatScreen(
                         onClick = {
                             showModeMenu = false
                             viewModel.setMode(ChatMode.THINK_DEEPLY)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("GitHub", color = Color.White) },
+                        onClick = {
+                            showModeMenu = false
+                            viewModel.setMode(ChatMode.GITHUB)
                         }
                     )
                 }
