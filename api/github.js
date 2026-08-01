@@ -109,9 +109,9 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const expectedSecret = process.env.GITHUB_PROXY_SECRET || '';
+  const expectedSecret = process.env.APP_GITHUB_PROXY_SECRET || '';
   if (!expectedSecret) {
-    return res.status(503).json({ error: 'GITHUB_PROXY_SECRET belum dikonfigurasi di Vercel.' });
+    return res.status(503).json({ error: 'APP_GITHUB_PROXY_SECRET belum dikonfigurasi di Vercel.' });
   }
   if (!secureEqual(req.headers['x-github-proxy-secret'], expectedSecret)) {
     return res.status(401).json({ error: 'Akses endpoint GitHub ditolak.' });
