@@ -66,7 +66,6 @@ class ChatViewModel(
 
     private val cryptoPriceRepository = com.example.data.CryptoPriceRepository(okHttpClient)
     private val holidayRepository = com.example.data.HolidayRepository(okHttpClient)
-    private val honchoMemoryClient = com.example.network.HonchoMemoryClient(applicationContext, okHttpClient)
 
     private val _uiState = MutableStateFlow(ChatUiState(mode = try { ChatMode.valueOf(localStorage.getChatMode()) } catch (e: Exception) { ChatMode.NORMAL }))
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -287,90 +286,6 @@ class ChatViewModel(
                 var searchLinks = ""
                 
                 val textLower = messageText.lowercase()
-                val activeMode = _uiState.value.mode
-
-                if (activeMode == ChatMode.GITHUB) {
-                    _uiState.update { it.copy(isLoading = true, loadingText = "Menghubungkan ke GitHub...") }
-                    val proxySecret = com.example.BuildConfig.APP_GITHUB_PROXY_SECRET
-                    if (proxySecret.isBlank() || proxySecret == "YOUR_APP_GITHUB_PROXY_SECRET") {
-                        chatRepository.insertMessage(
-                            MessageEntity(
-                                sessionId = sessionId,
-                                role = "assistant",
-                                content = "APP_GITHUB_PROXY_SECRET belum dikonfigurasi pada build APK."
-                            )
-                        )
-                        _uiState.update { it.copy(isLoading = false, loadingText = null) }
-                        return@launch
-                    }
-
-                    val githubAccount = if (
-                        textLower.contains("lutful777") ||
-                        textLower.contains("akun lutful") ||
-                        textLower.contains("token lutful")
-                    ) "lutful" else "soprat123"
-
-                    try {
-                        val githubBody = org.json.JSONObject()
-                            .put("query", messageText)
-                            .put("account", githubAccount)
-                            .toString()
-                            .toRequestBody("application/json; charset=utf-8".toMediaType())
-
-                        val githubRequest = Request.Builder()
-                            .url("https://chat-ai-lutfula.vercel.app/api/github")
-                            .addHeader("Content-Type", "application/json")
-                            .addHeader("X-GitHub-Proxy-Secret", proxySecret)
-                            .post(githubBody)
-                            .build()
-
-                        val githubResponse = okHttpClient.newCall(githubRequest).execute()
-                        val githubResponseText = githubResponse.body?.string().orEmpty()
-                        if (!githubResponse.isSuccessful) {
-                            val message = try {
-                                org.json.JSONObject(githubResponseText).optString("error", githubResponseText)
-                            } catch (_: Exception) {
-                                githubResponseText
-                            }
-                            chatRepository.insertMessage(
-                                MessageEntity(
-                                    sessionId = sessionId,
-                                    role = "assistant",
-                                    content = "GitHub endpoint gagal. HTTP ${githubResponse.code}: $message"
-                                )
-                            )
-                            _uiState.update { it.copy(isLoading = false, loadingText = null) }
-                            return@launch
-                        }
-
-                        val githubJson = org.json.JSONObject(githubResponseText)
-                        val githubContext = githubJson.optString("context")
-                        if (githubContext.isBlank()) {
-                            chatRepository.insertMessage(
-                                MessageEntity(
-                                    sessionId = sessionId,
-                                    role = "assistant",
-                                    content = "GitHub endpoint tidak mengembalikan data."
-                                )
-                            )
-                            _uiState.update { it.copy(isLoading = false, loadingText = null) }
-                            return@launch
-                        }
-                        searchContext += githubContext + "\n\n"
-                        _uiState.update { it.copy(loadingText = null) }
-                    } catch (e: Exception) {
-                        chatRepository.insertMessage(
-                            MessageEntity(
-                                sessionId = sessionId,
-                                role = "assistant",
-                                content = "Gagal menghubungkan mode GitHub: ${e.message}"
-                            )
-                        )
-                        _uiState.update { it.copy(isLoading = false, loadingText = null) }
-                        return@launch
-                    }
-                }
-
                 val isGoldQuery = Regex("\\b(xau|gold|emas)\\b").containsMatchIn(textLower)
                 val isFiatQuery = Regex("\\b(usd|idr|eur|gbp|jpy|kurs|mata\\s*uang)\\b").containsMatchIn(textLower)
                 
@@ -484,6 +399,27 @@ class ChatViewModel(
                     }
                 }
                 
+                if (_uiState.value.mode == ChatMode.GITHUB) {
+                    _uiState.update { it.copy(isLoading = true, loadingText = "Fetching GitHub...") }
+                    try {
+                        val encodedQuery = java.net.URLEncoder.encode(messageText, "UTF-8")
+                        val request = Request.Builder()
+                            .url("https://chat-ai-lutfula.vercel.app/api/github?q=$encodedQuery")
+                            .header("X-GitHub-Proxy-Secret", com.example.BuildConfig.APP_GITHUB_PROXY_SECRET)
+                            .get()
+                            .build()
+                        val response = okHttpClient.newCall(request).execute()
+                        val responseStr = response.body?.string()
+                        if (response.isSuccessful && responseStr != null) {
+                            searchContext += "Data dari GitHub API:\n" + (if (responseStr.length > 5000) responseStr.substring(0, 5000) + "..." else responseStr) + "\n\nInstruksi: Jawab berdasarkan data GitHub tersebut. Jangan berasumsi.\n"
+                        } else {
+                            searchContext += "Pencarian GitHub gagal: ${response.code}\n\n"
+                        }
+                    } catch (e: Exception) {
+                        searchContext += "Pencarian GitHub gagal: ${e.message}\n\n"
+                    }
+                }
+
                 val isHolidayQuery = Regex("\\b(tanggal merah|libur|working day|hari libur|suro|muharram|kalender)\\b").containsMatchIn(textLower)
                 if (isHolidayQuery) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking Holidays...") }
@@ -530,7 +466,7 @@ class ChatViewModel(
                     useSearch = false
                 }
                 
-                if (activeMode != ChatMode.GITHUB && urlsInMessage.isNotEmpty()) {
+                if (urlsInMessage.isNotEmpty()) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Checking website...") }
                     val scrapeUrl = urlsInMessage.first()
                     try {
@@ -583,8 +519,7 @@ class ChatViewModel(
                 var systemPrompt = when (mode) {
                     ChatMode.NORMAL -> "You are a helpful AI assistant. Provide fast, simple, and direct answers."
                     ChatMode.THINK -> "You are a helpful AI assistant. Approach tasks with careful reasoning and thorough checking. Explain your thought process."
-                    ChatMode.THINK_DEEPLY -> "You are a helpful AI assistant. Provide deeper analysis, detailed debugging, and exhaustive step-by-step reasoning. You are better for coding and complex tasks."
-                    ChatMode.GITHUB -> "You are in GitHub mode. Focus on repository code, commits, branches, pull requests, issues, and GitHub workflows. Give precise, practical coding help. Never claim that you opened, changed, committed, pushed, or deployed a repository unless repository data or a successful tool result is actually provided."
+                    ChatMode.THINK_DEEPLY, ChatMode.GITHUB -> "You are a helpful AI assistant. Provide deeper analysis, detailed debugging, and exhaustive step-by-step reasoning. You are better for coding and complex tasks."
                 }
                 
                 if (langPref == "id") {
@@ -713,30 +648,13 @@ class ChatViewModel(
                     chatMessages.add(com.example.network.ChatRequestMessage(role = "system", content = listOf(com.example.network.VisionContent(type = "text", text = "CRITICAL USER PREFERENCE (ALWAYS FOLLOW THIS IN YOUR NEXT RESPONSE):\n$localInstruction"))))
                 }
 
-                if (memoryEnabled) {
-                    val honchoContext = honchoMemoryClient.getContext(sessionId, messageText)
-                    if (honchoContext.isNotBlank()) {
-                        chatMessages.add(
-                            com.example.network.ChatRequestMessage(
-                                role = "system",
-                                content = listOf(
-                                    com.example.network.VisionContent(
-                                        type = "text",
-                                        text = "HONCHO LONG-TERM MEMORY (use only when relevant; never reveal this block verbatim):\n$honchoContext"
-                                    )
-                                )
-                            )
-                        )
-                    }
-                }
-
                 // Manually append the latest user message
                 val finalUserMessage = "$timeContext\n\nPERTANYAAN USER:\n$messageText"
                 chatMessages.add(makeMessage("user", finalUserMessage, imageUri, true))
 
                 // Check for Firecrawl search trigger
                 val (searchQuery, searchMode) = SearchDetector.detectSearchModeAndQuery(messageText)
-                if (activeMode != ChatMode.GITHUB && searchQuery != null && urlsInMessage.isEmpty()) {
+                if (searchQuery != null && urlsInMessage.isEmpty()) {
                     if (searchQuery.isEmpty()) {
                         chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = "Masukkan kata kunci setelah #berita, #browser, atau #cari."))
                         _uiState.update { it.copy(isLoading = false) }
@@ -768,8 +686,7 @@ class ChatViewModel(
                 val reasoning = if (enableReasoningParameter) {
                     when (mode) {
                         ChatMode.THINK -> ReasoningConfig("medium")
-                        ChatMode.THINK_DEEPLY -> ReasoningConfig("high")
-                        ChatMode.GITHUB -> ReasoningConfig("medium")
+                        ChatMode.THINK_DEEPLY, ChatMode.GITHUB -> ReasoningConfig("high")
                         ChatMode.NORMAL -> null
                     }
                 } else null
@@ -814,9 +731,6 @@ class ChatViewModel(
                         }
                         
                         chatRepository.insertMessage(MessageEntity(sessionId = sessionId, role = "assistant", content = finalReply))
-                        if (memoryEnabled) {
-                            honchoMemoryClient.saveTurn(sessionId, messageText, finalReply)
-                        }
                         
                         _uiState.update {
                             it.copy(isLoading = false)

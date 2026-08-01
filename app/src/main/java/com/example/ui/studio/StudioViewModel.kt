@@ -1,21 +1,11 @@
 package com.example.ui.studio
 
-import android.content.ContentValues
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
-import android.util.Log
-import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,45 +16,36 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URLDecoder
 import java.util.Base64
+import kotlinx.coroutines.delay
 
 data class StudioUiState(
     val selectedTab: Int = 0, // 0: Photo, 1: Edit, 2: Video
     val prompt: String = "",
-    val generatedMediaUrl: String? = null,
+    val generatedMediaUrl: String? = null, // Temporary store for generated image
     val generatedVideoUrl: String? = null,
     val isGenerating: Boolean = false,
     val error: String? = null,
-    val selectedImageUri: Uri? = null,
+    val selectedImageUri: Uri? = null, // Selected from user's device
     val videoStatus: String? = null
 )
 
 class StudioViewModel(
     private val settingsRepository: SettingsRepository,
     private val okHttpClient: OkHttpClient,
-    private val applicationContext: Context
+    private val applicationContext: android.content.Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StudioUiState())
     val uiState: StateFlow<StudioUiState> = _uiState.asStateFlow()
 
     fun selectTab(index: Int) {
-        _uiState.update {
-            it.copy(
-                selectedTab = index.coerceIn(0, 2),
-                error = null,
-                videoStatus = null
-            )
-        }
+        _uiState.update { it.copy(selectedTab = index, error = null, videoStatus = null) }
     }
 
     fun updatePrompt(text: String) {
@@ -72,910 +53,705 @@ class StudioViewModel(
     }
 
     fun selectImage(uri: Uri?) {
-        _uiState.update {
-            if (uri != null) {
-                // A newly selected image must replace stale generated previews.
-                it.copy(
-                    selectedImageUri = uri,
-                    generatedMediaUrl = null,
-                    generatedVideoUrl = null,
-                    error = null,
-                    videoStatus = null
-                )
-            } else {
-                // Null means "use the generated photo" in the video tab.
-                it.copy(
-                    selectedImageUri = null,
-                    generatedVideoUrl = null,
-                    error = null,
-                    videoStatus = null
-                )
-            }
-        }
+        _uiState.update { it.copy(selectedImageUri = uri) }
     }
 
     fun useGeneratedPhoto() {
-        _uiState.update {
-            it.copy(
-                selectedTab = 2,
-                selectedImageUri = null,
-                generatedVideoUrl = null,
-                error = null,
-                videoStatus = null
-            )
+        // Keeps generatedMediaUrl, can be used by video
+    }
+
+    private fun getFileFromUri(uri: Uri, economyMode: Boolean = false): File? {
+        try {
+            val tempFile = File.createTempFile("upload", ".png", applicationContext.cacheDir)
+            if (economyMode) {
+                val bitmap = android.graphics.BitmapFactory.decodeStream(applicationContext.contentResolver.openInputStream(uri))
+                if (bitmap != null) {
+                    var scaledBitmap = bitmap
+                    if (bitmap.width > 1024 || bitmap.height > 1024) {
+                        val ratio = minOf(1024f / bitmap.width, 1024f / bitmap.height)
+                        scaledBitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, (bitmap.width * ratio).toInt(), (bitmap.height * ratio).toInt(), true)
+                    }
+                    FileOutputStream(tempFile).use { out ->
+                        scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out)
+                    }
+                    return tempFile
+                }
+            }
+            
+            applicationContext.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            return tempFile
+        } catch (e: Exception) {
+            return null
+        }
+    }
+
+    private fun getBase64FromUri(uri: Uri, economyMode: Boolean = false): String? {
+        return try {
+            val mimeType = applicationContext.contentResolver.getType(uri) ?: "image/jpeg"
+            val base64Str = if (economyMode) {
+                val bitmap = android.graphics.BitmapFactory.decodeStream(applicationContext.contentResolver.openInputStream(uri))
+                if (bitmap != null) {
+                    var scaledBitmap = bitmap
+                    if (bitmap.width > 1024 || bitmap.height > 1024) {
+                        val ratio = minOf(1024f / bitmap.width, 1024f / bitmap.height)
+                        scaledBitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, (bitmap.width * ratio).toInt(), (bitmap.height * ratio).toInt(), true)
+                    }
+                    val outputStream = java.io.ByteArrayOutputStream()
+                    scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+                    Base64.getEncoder().encodeToString(outputStream.toByteArray())
+                } else null
+            } else {
+                val bytes = applicationContext.contentResolver.openInputStream(uri)?.readBytes()
+                if (bytes != null) {
+                    Base64.getEncoder().encodeToString(bytes)
+                } else null
+            }
+            if (base64Str != null) {
+                val finalMime = if (economyMode) "image/jpeg" else mimeType
+                "data:$finalMime;base64,$base64Str"
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    private fun getBase64FromUrl(urlString: String): String? {
+        return try {
+            val request = Request.Builder().url(urlString).build()
+            val response = okHttpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val mimeType = response.header("Content-Type") ?: "image/jpeg"
+                val bytes = response.body?.bytes()
+                if (bytes != null) {
+                    val base64Str = Base64.getEncoder().encodeToString(bytes)
+                    "data:$mimeType;base64,$base64Str"
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
         }
     }
 
     fun generate() {
         val state = _uiState.value
         if (state.isGenerating) return
-
-        _uiState.update {
-            it.copy(
-                isGenerating = true,
-                error = null,
-                videoStatus = null,
-                generatedVideoUrl = if (state.selectedTab == 2) null else it.generatedVideoUrl
-            )
-        }
-
+        
+        _uiState.update { it.copy(isGenerating = true, error = null, videoStatus = null) }
+        
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 when (state.selectedTab) {
                     0 -> generateImage(state.prompt)
                     1 -> editImage(state.prompt, state.selectedImageUri)
-                    2 -> {
-                        val source = state.selectedImageUri
-                            ?: state.generatedMediaUrl?.let(Uri::parse)
-                        generateVideo(state.prompt, source)
-                    }
+                    2 -> generateVideo(state.prompt, state.selectedImageUri ?: state.generatedMediaUrl?.let { Uri.parse(it) })
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Media generation failed", e)
-                val safeMessage = when {
-                    e.message?.contains("timeout", ignoreCase = true) == true ->
-                        "Network timeout. Please try again."
-                    else -> "Generation failed: ${e.localizedMessage ?: "Unknown error"}"
+                val safeMsg = when {
+                    e.message?.contains("timeout", ignoreCase = true) == true -> "Network timeout. Please try again."
+                    else -> "Generation failed: ${e.localizedMessage}"
                 }
-                _uiState.update {
-                    it.copy(isGenerating = false, error = safeMessage, videoStatus = null)
-                }
+                _uiState.update { it.copy(isGenerating = false, error = safeMsg) }
             }
         }
     }
 
     private suspend fun generateImage(prompt: String) {
-        if (!validatePrompt(prompt)) return
-
+        if (prompt.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please enter a prompt first.") }
+            return
+        }
         val baseUrl = settingsRepository.createPhotoBaseUrl.first().trimEnd('/')
-        val endpoint = settingsRepository.createPhotoEndpoint.first().trim('/')
+        val endpoint = settingsRepository.createPhotoEndpoint.first().removePrefix("/")
         val apiKey = settingsRepository.createPhotoApiKey.first()
         val model = settingsRepository.createPhotoModel.first()
         val format = settingsRepository.createPhotoFormat.first()
         val economyMode = settingsRepository.economyMode.first()
 
-        if (!validateConfiguration(baseUrl, endpoint, apiKey, "Create Photo")) return
+        if (baseUrl.isBlank() || endpoint.isBlank() || apiKey.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please configure Create Photo Settings first.") }
+            return
+        }
 
-        val requestBody = if (format.equals("multipart", ignoreCase = true)) {
-            MultipartBody.Builder()
+        val url = "$baseUrl/$endpoint"
+         val requestBody = if (format == "multipart") {
+             val builder = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("prompt", prompt)
-                .apply {
-                    if (model.isNotBlank()) addFormDataPart("model", model)
-                    if (economyMode) addFormDataPart("n", "1")
-                }
-                .build()
+                .addFormDataPart("model", model)
+             if (economyMode) builder.addFormDataPart("n", "1")
+             builder.build()
         } else {
             JSONObject().apply {
                 put("prompt", prompt)
                 if (model.isNotBlank()) put("model", model)
                 if (economyMode) put("n", 1)
-            }.toJsonBody()
+            }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }
 
-        executeImageRequest(
-            url = buildUrl(baseUrl, endpoint),
-            apiKey = apiKey,
-            requestBody = requestBody,
-            logLabel = "Create Photo"
-        )
-    }
-
-    private suspend fun editImage(prompt: String, imageUri: Uri?) {
-        if (!validatePrompt(prompt)) return
-        if (imageUri == null) {
-            fail("Please select a photo first.")
-            return
-        }
-
-        val baseUrl = settingsRepository.editPhotoBaseUrl.first().trimEnd('/')
-        val endpoint = settingsRepository.editPhotoEndpoint.first().trim('/')
-        val apiKey = settingsRepository.editPhotoApiKey.first()
-        val model = settingsRepository.editPhotoModel.first()
-        val format = settingsRepository.editPhotoFormat.first()
-        val economyMode = settingsRepository.economyMode.first()
-
-        if (!validateConfiguration(baseUrl, endpoint, apiKey, "Edit Photo")) return
-
-        val requestBody = if (format.equals("multipart", ignoreCase = true)) {
-            val tempFile = getFileFromUri(imageUri, economyMode)
-            if (tempFile == null) {
-                fail("Failed to read selected photo. Please choose another image.")
-                return
-            }
-
-            MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart("prompt", prompt)
-                .apply {
-                    if (model.isNotBlank()) addFormDataPart("model", model)
-                    addFormDataPart(
-                        "image",
-                        if (economyMode) "image.jpg" else tempFile.name,
-                        tempFile.asRequestBody(
-                            if (economyMode) JPEG_MEDIA_TYPE else IMAGE_MEDIA_TYPE
-                        )
-                    )
-                }
-                .build()
-        } else {
-            val imageValue = readImageForJson(imageUri, economyMode)
-            if (imageValue == null) {
-                fail("Failed to read selected photo. Please choose another image.")
-                return
-            }
-
-            JSONObject().apply {
-                put("prompt", prompt)
-                if (model.isNotBlank()) put("model", model)
-
-                if (isXai(baseUrl)) {
-                    // xAI /v1/images/edits requires application/json and an image object.
-                    put(
-                        "image",
-                        JSONObject()
-                            .put("url", imageValue)
-                            .put("type", "image_url")
-                    )
-                } else {
-                    put("image", imageValue)
-                }
-            }.toJsonBody()
-        }
-
-        executeImageRequest(
-            url = buildUrl(baseUrl, endpoint),
-            apiKey = apiKey,
-            requestBody = requestBody,
-            logLabel = "Edit Photo"
-        )
-    }
-
-    private suspend fun executeImageRequest(
-        url: String,
-        apiKey: String,
-        requestBody: RequestBody,
-        logLabel: String
-    ) {
         val request = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
             .post(requestBody)
             .build()
+            
+        val response = okHttpClient.newCall(request).execute()
+        val responseBody = response.body?.string() ?: ""
+        
+        android.util.Log.d("StudioViewModel", "Create Photo API response: ${response.code} $responseBody")
+        
+        handleImageResponse(response.code, responseBody)
+    }
+    
+    private suspend fun editImage(prompt: String, imageUri: Uri?) {
+        if (prompt.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please enter a prompt first.") }
+            return
+        }
+        if (imageUri == null) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please select a photo first.") }
+            return
+        }
+        
+        val baseUrl = settingsRepository.editPhotoBaseUrl.first().trimEnd('/')
+        val endpoint = settingsRepository.editPhotoEndpoint.first().removePrefix("/")
+        val apiKey = settingsRepository.editPhotoApiKey.first()
+        val model = settingsRepository.editPhotoModel.first()
+        val format = settingsRepository.editPhotoFormat.first()
+        val imageFormatRaw = settingsRepository.editPhotoImageFormat.first()
+        val imageFormatSetting = if (imageFormatRaw == "url") "multipart" else imageFormatRaw
+        val economyMode = settingsRepository.economyMode.first()
 
-        okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            Log.d(TAG, "$logLabel API response: ${response.code} $body")
-            handleImageResponse(response.code, body)
+        if (baseUrl.isBlank() || endpoint.isBlank() || apiKey.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please configure Edit Photo Settings first.") }
+            return
+        }
+
+        val url = "$baseUrl/$endpoint"
+        android.util.Log.d("StudioViewModel", "Edit Photo URL: $url | Format: $format | ImageFormat: $imageFormatSetting")
+        android.util.Log.d("StudioViewModel", "Edit Photo URI type: ${if (imageUri.toString().startsWith("http")) "http/https" else if (imageUri.toString().startsWith("content://")) "content://" else "file://"}")
+        
+        val requestBody = if (format == "multipart") {
+            val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            if (prompt.isNotBlank()) builder.addFormDataPart("prompt", prompt)
+            if (model.isNotBlank()) builder.addFormDataPart("model", model)
+            
+            val tempFile = getFileFromUri(imageUri, economyMode)
+            if (tempFile != null) {
+                // If economyMode is active or real type is jpeg, sending as jpeg is safer
+                val mediaType = if (economyMode) "image/jpeg".toMediaType() else "image/*".toMediaType()
+                val filename = if (economyMode) "image.jpg" else "image.jpg"
+                builder.addFormDataPart("image", filename, tempFile.asRequestBody(mediaType))
+            }
+            builder.build()
+        } else {
+            val stringUri = imageUri.toString()
+            val imgStr = if (stringUri.startsWith("http")) {
+                getBase64FromUrl(stringUri)
+            } else {
+                getBase64FromUri(imageUri, economyMode)
+            }
+            
+            if (imgStr == null) {
+                _uiState.update { it.copy(isGenerating = false, error = "Failed to read selected photo. Please choose another image.") }
+                return
+            }
+            
+            JSONObject().apply {
+                if (prompt.isNotBlank()) put("prompt", prompt)
+                if (model.isNotBlank()) put("model", model)
+                put("image", imgStr)
+            }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .post(requestBody)
+            .build()
+            
+        val response = okHttpClient.newCall(request).execute()
+        val responseBody = response.body?.string() ?: ""
+        
+        android.util.Log.d("StudioViewModel", "Edit Photo API response: ${response.code} $responseBody")
+        
+        handleImageResponse(response.code, responseBody)
+    }
+    
+    fun saveMedia(context: android.content.Context, url: String, isVideo: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val bytes = if (url.startsWith("data:")) {
+                    Base64.getDecoder().decode(url.substringAfter(","))
+                } else {
+                    val request = Request.Builder().url(url).build()
+                    okHttpClient.newCall(request).execute().body?.bytes()
+                }
+
+                if (bytes != null) {
+                    val resolver = context.contentResolver
+                    val contentValues = android.content.ContentValues().apply {
+                        val timestamp = System.currentTimeMillis()
+                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "AI_Studio_$timestamp.${if (isVideo) "mp4" else "png"}")
+                        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, if (isVideo) "video/mp4" else "image/png")
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, if (isVideo) android.os.Environment.DIRECTORY_MOVIES else android.os.Environment.DIRECTORY_PICTURES)
+                            put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+                        }
+                    }
+
+                    val collection = if (isVideo) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            android.provider.MediaStore.Video.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        } else android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    } else {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        } else android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                    }
+
+                    val itemUri = resolver.insert(collection, contentValues)
+                    if (itemUri != null) {
+                        resolver.openOutputStream(itemUri)?.use { out ->
+                            out.write(bytes)
+                        }
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            contentValues.clear()
+                            contentValues.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+                            resolver.update(itemUri, contentValues, null, null)
+                        }
+                        launch(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Saved to Gallery", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                         launch(Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "Failed to save: Could not create MediaStore entry", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    launch(Dispatchers.Main) {
+                        android.widget.Toast.makeText(context, "Failed to save: Could not fetch media data", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Failed to save: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
     private fun handleImageResponse(code: Int, body: String) {
         if (code in 200..299) {
-            val imageUrl = extractMediaUrl(body)
-            if (imageUrl != null) {
-                _uiState.update {
-                    it.copy(
-                        isGenerating = false,
-                        generatedMediaUrl = imageUrl,
-                        generatedVideoUrl = null,
-                        error = null,
-                        videoStatus = null
-                    )
-                }
+            // Try to flexibly parse image url or base64 out of body
+            val imgUrl = extractMediaUrl(body)
+            if (imgUrl != null) {
+                _uiState.update { it.copy(isGenerating = false, generatedMediaUrl = imgUrl) }
             } else {
-                fail("Failed to extract image from response.")
+                _uiState.update { it.copy(isGenerating = false, error = "Failed to extract image from response.") }
             }
+        } else {
+            val safeBody = if (body.length > 200) body.substring(0, 200) + "..." else body
+            val errorMsg = when (code) {
+                400 -> "Invalid request. Check model, prompt, or required image input.\nProvider output: $safeBody"
+                401 -> "Invalid API key."
+                402 -> "Provider credit or billing issue."
+                404 -> "Endpoint not found. Check Base URL and Path in Settings."
+                415 -> "Error $code: Unsupported Media Type. Check Request Format (JSON vs multipart) and endpoint.\nProvider output: $safeBody"
+                422 -> "Image format not accepted by provider. Try multipart or base64 data URI.\nProvider output: $safeBody"
+                429 -> "Rate limit exceeded."
+                else -> "Error $code: $safeBody"
+            }
+            _uiState.update { it.copy(isGenerating = false, error = errorMsg) }
+        }
+    }
+    
+    private suspend fun generateVideo(prompt: String, imageUri: Uri?) {
+        if (prompt.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please enter a prompt first.") }
             return
         }
-
-        fail(mediaHttpError(code, body, isVideo = false))
-    }
-
-    private suspend fun generateVideo(prompt: String, imageUri: Uri?) {
-        if (!validatePrompt(prompt)) return
         if (imageUri == null) {
-            fail("Please select or generate a photo first.")
-            return
+             _uiState.update { it.copy(isGenerating = false, error = "Please select or generate a photo first.") }
+             return
         }
 
         val baseUrl = settingsRepository.photoVideoBaseUrl.first().trimEnd('/')
-        val createEndpoint = settingsRepository.photoVideoCreateEndpoint.first().trim('/')
+        val createEndpoint = settingsRepository.photoVideoCreateEndpoint.first().removePrefix("/")
         val apiKey = settingsRepository.photoVideoApiKey.first()
         val model = settingsRepository.photoVideoModel.first()
         val format = settingsRepository.photoVideoFormat.first()
-        val durationSetting = settingsRepository.photoVideoDuration.first()
+        val imageFormatRaw = settingsRepository.photoVideoImageFormat.first()
+        val imageFormatSetting = if (imageFormatRaw == "url") "multipart" else imageFormatRaw
+        val duration = settingsRepository.photoVideoDuration.first()
         val economyMode = settingsRepository.economyMode.first()
-        val duration = (if (economyMode) "5" else durationSetting).toIntOrNull()
-            ?.coerceIn(1, 60)
+        val actualDuration = if (economyMode) "5" else duration
 
-        if (!validateConfiguration(baseUrl, createEndpoint, apiKey, "Photo to Video")) return
+        if (baseUrl.isBlank() || createEndpoint.isBlank() || apiKey.isBlank()) {
+            _uiState.update { it.copy(isGenerating = false, error = "Please configure Photo to Video Settings first.") }
+            return
+        }
 
-        val requestBody = if (format.equals("multipart", ignoreCase = true)) {
-            buildVideoMultipartBody(
-                imageUri = imageUri,
-                prompt = prompt,
-                model = model,
-                duration = duration,
-                economyMode = economyMode
-            ) ?: return
+        val url = "$baseUrl/$createEndpoint"
+        android.util.Log.d("StudioViewModel", "Photo to Video URL: $url | Format: $format | ImageFormat: $imageFormatSetting")
+        android.util.Log.d("StudioViewModel", "Photo to Video URI type: ${if (imageUri.toString().startsWith("http")) "http/https" else if (imageUri.toString().startsWith("content://")) "content://" else "file://"}")
+        
+        val requestBody = if (format == "multipart") {
+            val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            if (prompt.isNotBlank()) builder.addFormDataPart("prompt", prompt)
+            if (model.isNotBlank()) builder.addFormDataPart("model", model)
+            if (actualDuration.isNotBlank()) builder.addFormDataPart("duration", actualDuration)
+            
+            // Just try file directly, since generating Media URL gives http/https link that we'd have to download or use as url param.
+            val stringUri = imageUri.toString()
+            if (stringUri.startsWith("http")) { // Generated media url usually
+                builder.addFormDataPart("image_url", stringUri)
+            } else {
+                val tempFile = getFileFromUri(imageUri, economyMode)
+                if (tempFile != null) {
+                    val mediaType = if (economyMode) "image/jpeg".toMediaType() else "image/*".toMediaType()
+                    builder.addFormDataPart("image", "image.jpg", tempFile.asRequestBody(mediaType))
+                }
+            }
+            builder.build()
         } else {
-            val imageValue = readImageForJson(imageUri, economyMode)
-            if (imageValue == null) {
-                fail("Failed to read selected photo. Please choose another image.")
+            val stringUri = imageUri.toString()
+            val imgStr = if (stringUri.startsWith("http")) {
+                getBase64FromUrl(stringUri)
+            } else {
+                getBase64FromUri(imageUri, economyMode)
+            }
+            
+            if (imgStr == null) {
+                _uiState.update { it.copy(isGenerating = false, error = "Failed to read selected photo. Please choose another image.") }
                 return
             }
-
+            
             JSONObject().apply {
-                put("prompt", prompt)
+                if (prompt.isNotBlank()) put("prompt", prompt)
                 if (model.isNotBlank()) put("model", model)
-                if (duration != null) put("duration", duration)
-
-                if (isXai(baseUrl)) {
-                    put("image", JSONObject().put("url", imageValue))
+                if (actualDuration.isNotBlank()) put("duration", actualDuration)
+                
+                if (baseUrl.contains("api.x.ai")) {
+                    val imageObj = JSONObject().apply {
+                        put("url", imgStr ?: "")
+                    }
+                    put("image", imageObj)
                 } else {
-                    put("image", imageValue)
+                    put("image", imgStr ?: "")
                 }
-            }.toJsonBody()
+            }.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         }
 
         val request = Request.Builder()
-            .url(buildUrl(baseUrl, createEndpoint))
+            .url(url)
             .addHeader("Authorization", "Bearer $apiKey")
             .post(requestBody)
             .build()
-
-        okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            Log.d(TAG, "Photo to Video API response: ${response.code} $body")
-
-            if (response.code !in 200..299) {
-                fail(mediaHttpError(response.code, body, isVideo = true))
-                return
+            
+        val response = okHttpClient.newCall(request).execute()
+        val body = response.body?.string() ?: ""
+        
+        android.util.Log.d("StudioViewModel", "Photo to Video API response: ${response.code} $body")
+        
+        if (response.code in 200..299) {
+            // Check if it returned a video URL immediately
+            val vidUrl = extractVideoUrl(body)
+            if (vidUrl != null) {
+                _uiState.update { it.copy(isGenerating = false, generatedVideoUrl = vidUrl) }
+            } else {
+                // Look for request ID and poll if status endpoint exists
+                val reqId = extractRequestId(body)
+                val statusEndpoint = settingsRepository.photoVideoStatusEndpoint.first().removePrefix("/")
+                if (reqId != null && statusEndpoint.isNotBlank()) {
+                    _uiState.update { it.copy(videoStatus = "Starting video generation...") }
+                    pollVideoStatus(reqId, apiKey, baseUrl, statusEndpoint)
+                } else {
+                    _uiState.update { it.copy(isGenerating = false, error = "Failed to extract Video URL or Request ID from response.") }
+                }
             }
-
-            val immediateUrl = extractVideoUrl(body)
-            if (immediateUrl != null) {
-                completeVideo(immediateUrl)
-                return
-            }
-
-            val requestId = extractRequestId(body)
-            val statusEndpoint = settingsRepository.photoVideoStatusEndpoint.first().trim('/')
-            if (requestId.isNullOrBlank() || statusEndpoint.isBlank()) {
-                fail("Failed to extract Video URL or Request ID from response.")
-                return
-            }
-
-            _uiState.update { it.copy(videoStatus = "Starting video generation...") }
-            pollVideoStatus(requestId, apiKey, baseUrl, statusEndpoint)
-        }
-    }
-
-    private fun buildVideoMultipartBody(
-        imageUri: Uri,
-        prompt: String,
-        model: String,
-        duration: Int?,
-        economyMode: Boolean
-    ): RequestBody? {
-        val builder = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("prompt", prompt)
-
-        if (model.isNotBlank()) builder.addFormDataPart("model", model)
-        if (duration != null) builder.addFormDataPart("duration", duration.toString())
-
-        val uriString = imageUri.toString()
-        if (uriString.startsWith("http://") || uriString.startsWith("https://")) {
-            builder.addFormDataPart("image_url", uriString)
         } else {
-            val tempFile = getFileFromUri(imageUri, economyMode)
-            if (tempFile == null) {
-                fail("Failed to read selected photo. Please choose another image.")
-                return null
+            val safeBody = if (body.length > 200) body.substring(0, 200) + "..." else body
+            val errorMsg = when (response.code) {
+                400 -> "Invalid request. Check model, prompt, or required image input.\nProvider output: $safeBody"
+                401 -> "Invalid API key."
+                402 -> "Provider credit or billing issue."
+                404 -> "Endpoint not found. Check Base URL and Path in Settings."
+                415 -> "Error ${response.code}: Unsupported Media Type. Check Request Format (JSON vs multipart) and endpoint.\nProvider output: $safeBody"
+                422 -> "Video request failed. The image payload format is not accepted. Try base64 data URI, URL, or multipart.\nProvider output: $safeBody"
+                429 -> "Rate limit exceeded."
+                else -> "Error ${response.code}: $safeBody"
             }
-            builder.addFormDataPart(
-                "image",
-                if (economyMode) "image.jpg" else tempFile.name,
-                tempFile.asRequestBody(if (economyMode) JPEG_MEDIA_TYPE else IMAGE_MEDIA_TYPE)
-            )
+            _uiState.update { it.copy(isGenerating = false, error = errorMsg) }
         }
-
-        return builder.build()
     }
-
-    private suspend fun pollVideoStatus(
-        requestId: String,
-        apiKey: String,
-        baseUrl: String,
-        statusEndpoint: String
-    ) {
-        val pollingUrl = endpointWithRequestId(baseUrl, statusEndpoint, requestId)
+    
+    private suspend fun pollVideoStatus(reqId: String, apiKey: String, baseUrl: String, statusEndpoint: String) {
+        val decodedEndpoint = java.net.URLDecoder.decode(statusEndpoint, "UTF-8").removePrefix("/")
+        var pollingUrl = "$baseUrl/$decodedEndpoint"
+            .replace("{id}", reqId)
+            .replace("{request_id}", reqId)
+            .replace("{task_id}", reqId)
+            
+        if (!decodedEndpoint.contains("{") && !pollingUrl.endsWith("/$reqId")) {
+            val sep = if (pollingUrl.endsWith("/")) "" else "/"
+            pollingUrl = "$pollingUrl$sep$reqId"
+        }
+        
         _uiState.update { it.copy(videoStatus = "Checking video status...") }
-
-        repeat(MAX_VIDEO_POLL_ATTEMPTS) { index ->
-            delay(VIDEO_POLL_INTERVAL_MS)
-            val attempt = index + 1
-            _uiState.update { it.copy(videoStatus = "Processing video... (Attempt $attempt)") }
-
+        
+        val maxAttempts = 60
+        var attempts = 0
+        while (attempts < maxAttempts) {
+            delay(5000)
+            attempts++
+            
+            _uiState.update { it.copy(videoStatus = "Processing video... (Attempt $attempts)") }
+            
             try {
                 val request = Request.Builder()
                     .url(pollingUrl)
                     .addHeader("Authorization", "Bearer $apiKey")
                     .get()
                     .build()
-
-                okHttpClient.newCall(request).execute().use { response ->
-                    val body = response.body?.string().orEmpty()
-                    Log.d(TAG, "Video status response: ${response.code} $body")
-
-                    if (response.code !in 200..299) {
-                        fail("Polling failed: ${response.code}. ${truncate(body)}")
-                        return
-                    }
-
-                    when (extractStatus(body)) {
-                        "completed" -> {
-                            val videoUrl = extractVideoUrl(body)
-                            if (videoUrl != null) {
-                                completeVideo(videoUrl)
+                    
+                val response = okHttpClient.newCall(request).execute()
+                val body = response.body?.string() ?: ""
+                
+                if (response.code in 200..299) {
+                    val status = extractStatus(body)
+                    
+                    if (status == "completed" || status == "success") {
+                        val vidUrl = extractVideoUrl(body) // from status or result if combined
+                        if (vidUrl != null) {
+                            _uiState.update { it.copy(isGenerating = false, generatedVideoUrl = vidUrl, videoStatus = null) }
+                            return
+                        } else {
+                            // fetch result endpoint if separated
+                            val resultEndpoint = settingsRepository.photoVideoResultEndpoint.first().removePrefix("/")
+                            if (resultEndpoint.isNotBlank()) {
+                                fetchVideoResult(reqId, apiKey, baseUrl, resultEndpoint)
+                                return
+                            } else {
+                                _uiState.update { it.copy(isGenerating = false, error = "Completed but no Video URL found", videoStatus = null) }
                                 return
                             }
-
-                            val resultEndpoint =
-                                settingsRepository.photoVideoResultEndpoint.first().trim('/')
-                            if (resultEndpoint.isNotBlank()) {
-                                fetchVideoResult(
-                                    requestId,
-                                    apiKey,
-                                    baseUrl,
-                                    resultEndpoint
-                                )
-                            } else {
-                                fail("Completed but no Video URL found.")
-                            }
-                            return
                         }
-
-                        "failed" -> {
-                            fail("Video generation failed. ${extractProviderError(body)}")
-                            return
-                        }
-
-                        "expired" -> {
-                            fail("Video generation request expired. Please generate it again.")
-                            return
-                        }
-
-                        else -> {
-                            val rawStatus = extractRawStatus(body) ?: "processing"
-                            _uiState.update {
-                                it.copy(videoStatus = "Status: $rawStatus (Attempt $attempt)")
-                            }
-                        }
+                    } else if (status == "failed" || status == "error") {
+                        _uiState.update { it.copy(isGenerating = false, error = "Video generation failed.", videoStatus = null) }
+                        return
+                    } else {
+                        // Pending / Processing
+                        _uiState.update { it.copy(videoStatus = "Status: $status (Attempt $attempts)") }
                     }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Video status polling attempt $attempt failed", e)
-                if (attempt == MAX_VIDEO_POLL_ATTEMPTS) {
-                    fail("Video status check failed: ${e.localizedMessage ?: "Network error"}")
+                } else {
+                    _uiState.update { it.copy(isGenerating = false, error = "Polling failed: ${response.code}", videoStatus = null) }
                     return
                 }
+            } catch (e: Exception) {
+                // ignore and retry
             }
         }
-
-        fail("Video is still processing. Please try again later.")
+        _uiState.update { it.copy(isGenerating = false, error = "Video is still processing. Please try again or increase polling timeout.", videoStatus = null) }
     }
-
-    private suspend fun fetchVideoResult(
-        requestId: String,
-        apiKey: String,
-        baseUrl: String,
-        resultEndpoint: String
-    ) {
+    
+    private suspend fun fetchVideoResult(reqId: String, apiKey: String, baseUrl: String, resultEndpoint: String) {
         _uiState.update { it.copy(videoStatus = "Finalizing video...") }
-        val resultUrl = endpointWithRequestId(baseUrl, resultEndpoint, requestId)
-
+        val decodedEndpoint = java.net.URLDecoder.decode(resultEndpoint, "UTF-8").removePrefix("/")
+        var resUrl = "$baseUrl/$decodedEndpoint"
+            .replace("{id}", reqId)
+            .replace("{request_id}", reqId)
+            .replace("{task_id}", reqId)
+            
+        if (!decodedEndpoint.contains("{") && !resUrl.endsWith("/$reqId")) {
+            val sep = if (resUrl.endsWith("/")) "" else "/"
+            resUrl = "$resUrl$sep$reqId"
+        }
+        
         try {
             val request = Request.Builder()
-                .url(resultUrl)
+                .url(resUrl)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .get()
                 .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (response.code !in 200..299) {
-                    fail("Failed to fetch result: ${response.code}. ${truncate(body)}")
-                    return
-                }
-
-                val videoUrl = extractVideoUrl(body)
-                if (videoUrl != null) {
-                    completeVideo(videoUrl)
+            val response = okHttpClient.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            
+            if (response.code in 200..299) {
+                val vidUrl = extractVideoUrl(body)
+                if (vidUrl != null) {
+                    _uiState.update { it.copy(isGenerating = false, generatedVideoUrl = vidUrl, videoStatus = null) }
                 } else {
-                    fail("Could not find video URL in result. Provider output: ${truncate(body, 500)}")
+                    val truncatedBody = if (body.length > 500) body.substring(0, 500) + "..." else body
+                    _uiState.update { it.copy(isGenerating = false, error = "Could not find video URL in result. Provider output: $truncatedBody", videoStatus = null) }
                 }
+            } else {
+                 _uiState.update { it.copy(isGenerating = false, error = "Failed to fetch result: ${response.code}", videoStatus = null) }
             }
-        } catch (e: Exception) {
-            fail("Failed to fetch result: ${e.localizedMessage ?: "Network error"}")
+        } catch(e: Exception) {
+             _uiState.update { it.copy(isGenerating = false, error = "Failed to fetch result: ${e.localizedMessage}", videoStatus = null) }
         }
     }
 
-    fun saveMedia(context: Context, url: String, isVideo: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val media = loadMediaBytes(url)
-                if (media == null) {
-                    showToast(context, "Failed to save: Could not fetch media data")
-                    return@launch
+    // Flexible parsers
+    private fun extractMediaUrl(jsonStr: String): String? {
+        return try {
+            val obj = JSONObject(jsonStr)
+            
+            // Common paths: URL in data array
+            if (obj.has("data") && obj.optJSONArray("data") != null) {
+                val arr = obj.getJSONArray("data")
+                if (arr.length() > 0) {
+                    val item = arr.getJSONObject(0)
+                    if (item.has("url")) return item.getString("url")
+                    if (item.has("b64_json")) return "data:image/png;base64,${item.getString("b64_json")}"
                 }
-
-                val (bytes, detectedMime) = media
-                val mimeType = if (isVideo) {
-                    detectedMime.takeIf { it.startsWith("video/") } ?: "video/mp4"
-                } else {
-                    detectedMime.takeIf { it.startsWith("image/") } ?: "image/png"
-                }
-                val extension = extensionForMime(mimeType, isVideo)
-                val resolver = context.contentResolver
-                val values = ContentValues().apply {
-                    put(
-                        MediaStore.MediaColumns.DISPLAY_NAME,
-                        "AI_Studio_${System.currentTimeMillis()}.$extension"
-                    )
-                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(
-                            MediaStore.MediaColumns.RELATIVE_PATH,
-                            if (isVideo) Environment.DIRECTORY_MOVIES
-                            else Environment.DIRECTORY_PICTURES
-                        )
-                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            // URL at root
+            if (obj.has("url")) return obj.getString("url")
+            if (obj.has("output") && obj.optJSONArray("output") != null) return obj.getJSONArray("output").getString(0)
+            if (obj.has("image_url")) return obj.getString("image_url")
+            
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    private fun extractVideoUrl(jsonStr: String): String? {
+        return try {
+            val obj = JSONObject(jsonStr)
+            
+            if (obj.has("download_url") && !obj.isNull("download_url")) return obj.getString("download_url")
+            if (obj.has("video") && !obj.isNull("video")) {
+                val v = obj.get("video")
+                if (v is String) return v
+                if (v is JSONObject && v.has("url")) return v.getString("url")
+            }
+            if (obj.has("assets") && !obj.isNull("assets")) {
+                val assets = obj.getJSONObject("assets")
+                if (assets.has("video")) return assets.getString("video")
+                if (assets.has("url")) return assets.getString("url")
+                if (assets.has("video_url")) return assets.getString("video_url")
+            }
+            if (obj.has("output") && !obj.isNull("output")) {
+                val out = obj.get("output")
+                if (out is org.json.JSONArray && out.length() > 0) return out.getString(0)
+                if (out is String) return out
+            }
+            if (obj.has("video_url") && !obj.isNull("video_url")) return obj.getString("video_url")
+            if (obj.has("url") && !obj.isNull("url")) return obj.getString("url")
+            
+            if (obj.has("data") && !obj.isNull("data")) {
+                val data = obj.getJSONArray("data")
+                if (data.length() > 0) {
+                    val first = data.getJSONObject(0)
+                    if (first.has("video_url")) return first.getString("video_url")
+                    if (first.has("download_url")) return first.getString("download_url")
+                    if (first.has("url")) return first.getString("url")
+                    if (first.has("asset") && !first.isNull("asset")) {
+                        val a = first.getJSONObject("asset")
+                        if (a.has("url")) return a.getString("url")
+                    }
+                    if (first.has("video") && !first.isNull("video")) {
+                        val v = first.getJSONObject("video")
+                        if (v.has("url")) return v.getString("url")
                     }
                 }
-
-                val collection = if (isVideo) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    } else {
-                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                    }
-                } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                    } else {
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                    }
-                }
-
-                val itemUri = resolver.insert(collection, values)
-                if (itemUri == null) {
-                    showToast(context, "Failed to save: Could not create MediaStore entry")
-                    return@launch
-                }
-
-                resolver.openOutputStream(itemUri)?.use { it.write(bytes) }
-                    ?: throw IllegalStateException("Could not open output stream")
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(itemUri, values, null, null)
-                }
-
-                showToast(context, "Saved to Gallery")
-            } catch (e: Exception) {
-                showToast(context, "Failed to save: ${e.localizedMessage ?: "Unknown error"}")
-            }
-        }
-    }
-
-    private fun getFileFromUri(uri: Uri, economyMode: Boolean): File? {
-        return try {
-            val tempFile = File.createTempFile(
-                "upload_",
-                if (economyMode) ".jpg" else ".img",
-                applicationContext.cacheDir
-            )
-
-            if (economyMode) {
-                val bitmap = applicationContext.contentResolver.openInputStream(uri)?.use {
-                    BitmapFactory.decodeStream(it)
-                } ?: return null
-                val scaled = scaleBitmap(bitmap)
-                FileOutputStream(tempFile).use { output ->
-                    scaled.compress(Bitmap.CompressFormat.JPEG, 70, output)
-                }
-                if (scaled !== bitmap) scaled.recycle()
-                bitmap.recycle()
-            } else {
-                applicationContext.contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(tempFile).use(input::copyTo)
-                } ?: return null
             }
 
-            tempFile
+            if (obj.has("result") && !obj.isNull("result")) {
+                val res = obj.getJSONObject("result")
+                if (res.has("video") && !res.isNull("video")) {
+                    val v = res.get("video")
+                    if (v is String) return v
+                    if (v is JSONObject && v.has("url")) return v.getString("url")
+                }
+                if (res.has("video_url")) return res.getString("video_url")
+                if (res.has("url")) return res.getString("url")
+                if (res.has("assets") && !res.isNull("assets")) {
+                    val ass = res.getJSONObject("assets")
+                    if (ass.has("video")) return ass.getString("video")
+                }
+            }
+
+            if (obj.has("response") && !obj.isNull("response")) {
+                val resp = obj.getJSONObject("response")
+                if (resp.has("video_url")) return resp.getString("video_url")
+            }
+            if (obj.has("asset") && !obj.isNull("asset")) {
+                val a = obj.getJSONObject("asset")
+                if (a.has("url")) return a.getString("url")
+            }
+
+            val url = extractMediaUrl(jsonStr)
+            if (url != null && url.endsWith(".mp4")) return url
+            
+            val regex = """https?://[^\s"']+""".toRegex()
+            val matches = regex.findAll(jsonStr)
+            for (match in matches) {
+                val m = match.value
+                val lower = m.lowercase()
+                if (lower.contains(".mp4") || lower.contains("video") || lower.contains("download") || lower.contains("asset")) {
+                    return m.removeSurrounding("\"").removeSurrounding("'")
+                }
+            }
+            
+            null
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to create upload file", e)
+            val regex = """https?://[^\s"']+""".toRegex()
+            val matches = regex.findAll(jsonStr)
+            for (match in matches) {
+                val m = match.value
+                val lower = m.lowercase()
+                if (lower.contains(".mp4") || lower.contains("video") || lower.contains("download") || lower.contains("asset")) {
+                    return m.removeSurrounding("\"").removeSurrounding("'")
+                }
+            }
             null
         }
     }
-
-    private fun getBase64FromUri(uri: Uri, economyMode: Boolean): String? {
+    
+    private fun extractRequestId(jsonStr: String): String? {
         return try {
-            if (economyMode) {
-                val bitmap = applicationContext.contentResolver.openInputStream(uri)?.use {
-                    BitmapFactory.decodeStream(it)
-                } ?: return null
-                val scaled = scaleBitmap(bitmap)
-                val output = ByteArrayOutputStream()
-                scaled.compress(Bitmap.CompressFormat.JPEG, 70, output)
-                if (scaled !== bitmap) scaled.recycle()
-                bitmap.recycle()
-                "data:image/jpeg;base64,${
-                    Base64.getEncoder().encodeToString(output.toByteArray())
-                }"
-            } else {
-                val mime = applicationContext.contentResolver.getType(uri) ?: "image/jpeg"
-                val bytes = applicationContext.contentResolver.openInputStream(uri)?.use {
-                    it.readBytes()
-                } ?: return null
-                "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
+            val obj = JSONObject(jsonStr)
+            if (obj.has("id")) return obj.getString("id")
+            if (obj.has("task_id")) return obj.getString("task_id")
+            if (obj.has("request_id")) return obj.getString("request_id")
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    private fun extractStatus(jsonStr: String): String? {
+        return try {
+            val obj = JSONObject(jsonStr)
+            val st = if (obj.has("state")) obj.getString("state").lowercase()
+            else if (obj.has("status")) obj.getString("status").lowercase()
+            else null
+
+            when (st) {
+                "completed", "complete", "success", "succeeded", "done", "finished" -> "completed"
+                "failed", "error", "cancelled", "canceled" -> "failed"
+                else -> st
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to encode selected image", e)
             null
-        }
-    }
-
-    private fun getBase64FromUrl(url: String): String? {
-        return try {
-            val request = Request.Builder().url(url).get().build()
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val mime = response.header("Content-Type")
-                    ?.substringBefore(';')
-                    ?.takeIf { it.startsWith("image/") }
-                    ?: "image/jpeg"
-                val bytes = response.body?.bytes() ?: return null
-                "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to download source image", e)
-            null
-        }
-    }
-
-    private fun readImageForJson(uri: Uri, economyMode: Boolean): String? {
-        val value = uri.toString()
-        return if (value.startsWith("http://") || value.startsWith("https://")) {
-            // Public URLs are supported directly by xAI and most media providers.
-            value
-        } else {
-            getBase64FromUri(uri, economyMode)
-        }
-    }
-
-    private fun scaleBitmap(bitmap: Bitmap): Bitmap {
-        if (bitmap.width <= MAX_IMAGE_SIDE && bitmap.height <= MAX_IMAGE_SIDE) {
-            return bitmap
-        }
-        val ratio = minOf(
-            MAX_IMAGE_SIDE.toFloat() / bitmap.width,
-            MAX_IMAGE_SIDE.toFloat() / bitmap.height
-        )
-        return Bitmap.createScaledBitmap(
-            bitmap,
-            (bitmap.width * ratio).toInt().coerceAtLeast(1),
-            (bitmap.height * ratio).toInt().coerceAtLeast(1),
-            true
-        )
-    }
-
-    private fun extractMediaUrl(json: String): String? {
-        return try {
-            val obj = JSONObject(json)
-
-            obj.optString("url").takeIf { it.isNotBlank() }?.let { return it }
-            obj.optString("image_url").takeIf { it.isNotBlank() }?.let { return it }
-            obj.optString("b64_json").takeIf { it.isNotBlank() }?.let {
-                return "data:image/png;base64,$it"
-            }
-
-            obj.optJSONArray("data")?.firstObject()?.let { item ->
-                item.optString("url").takeIf { it.isNotBlank() }?.let { return it }
-                item.optString("image_url").takeIf { it.isNotBlank() }?.let { return it }
-                item.optString("b64_json").takeIf { it.isNotBlank() }?.let {
-                    return "data:image/png;base64,$it"
-                }
-            }
-
-            when (val output = obj.opt("output")) {
-                is String -> output.takeIf { it.isNotBlank() }
-                is JSONArray -> output.optString(0).takeIf { it.isNotBlank() }
-                is JSONObject -> {
-                    output.optString("url").takeIf { it.isNotBlank() }
-                        ?: output.optString("image_url").takeIf { it.isNotBlank() }
-                }
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun extractVideoUrl(json: String): String? {
-        return try {
-            val obj = JSONObject(json)
-            findVideoUrl(obj) ?: findVideoUrlByRegex(json)
-        } catch (_: Exception) {
-            findVideoUrlByRegex(json)
-        }
-    }
-
-    private fun findVideoUrl(obj: JSONObject): String? {
-        listOf("download_url", "video_url", "url").forEach { key ->
-            obj.optString(key).takeIf { it.isNotBlank() }?.let { return it }
-        }
-
-        when (val video = obj.opt("video")) {
-            is String -> video.takeIf { it.isNotBlank() }?.let { return it }
-            is JSONObject -> findVideoUrl(video)?.let { return it }
-        }
-
-        listOf("assets", "result", "response", "asset").forEach { key ->
-            obj.optJSONObject(key)?.let { nested ->
-                findVideoUrl(nested)?.let { return it }
-            }
-        }
-
-        obj.optJSONArray("data")?.firstObject()?.let {
-            findVideoUrl(it)?.let { url -> return url }
-        }
-
-        when (val output = obj.opt("output")) {
-            is String -> output.takeIf { it.isNotBlank() }?.let { return it }
-            is JSONArray -> output.optString(0).takeIf { it.isNotBlank() }?.let { return it }
-            is JSONObject -> findVideoUrl(output)?.let { return it }
-        }
-
-        return null
-    }
-
-    private fun findVideoUrlByRegex(text: String): String? {
-        val regex = """https?://[^\s\"']+""".toRegex()
-        return regex.findAll(text)
-            .map { it.value.trimEnd(',', '}', ']') }
-            .firstOrNull {
-                val lower = it.lowercase()
-                lower.contains(".mp4") ||
-                    lower.contains("video") ||
-                    lower.contains("download") ||
-                    lower.contains("asset")
-            }
-    }
-
-    private fun extractRequestId(json: String): String? {
-        return try {
-            val obj = JSONObject(json)
-            listOf("request_id", "task_id", "id")
-                .firstNotNullOfOrNull { key ->
-                    obj.optString(key).takeIf { it.isNotBlank() }
-                }
-                ?: obj.optJSONObject("data")?.let { nested ->
-                    listOf("request_id", "task_id", "id")
-                        .firstNotNullOfOrNull { key ->
-                            nested.optString(key).takeIf { it.isNotBlank() }
-                        }
-                }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun extractRawStatus(json: String): String? {
-        return try {
-            val obj = JSONObject(json)
-            obj.optString("status").takeIf { it.isNotBlank() }
-                ?: obj.optString("state").takeIf { it.isNotBlank() }
-                ?: obj.optJSONObject("data")?.let {
-                    it.optString("status").takeIf(String::isNotBlank)
-                        ?: it.optString("state").takeIf(String::isNotBlank)
-                }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun extractStatus(json: String): String? {
-        return when (extractRawStatus(json)?.lowercase()) {
-            "completed", "complete", "success", "succeeded", "done", "finished" -> "completed"
-            "failed", "error", "cancelled", "canceled" -> "failed"
-            "expired" -> "expired"
-            else -> extractRawStatus(json)?.lowercase()
-        }
-    }
-
-    private fun extractProviderError(json: String): String {
-        return try {
-            val obj = JSONObject(json)
-            obj.optString("error").takeIf { it.isNotBlank() }
-                ?: obj.optString("message").takeIf { it.isNotBlank() }
-                ?: obj.optJSONObject("error")?.optString("message")
-                ?: ""
-        } catch (_: Exception) {
-            ""
-        }
-    }
-
-    private fun endpointWithRequestId(
-        baseUrl: String,
-        endpoint: String,
-        requestId: String
-    ): String {
-        val decoded = URLDecoder.decode(endpoint, "UTF-8").trim('/')
-        var result = buildUrl(baseUrl, decoded)
-            .replace("{id}", requestId)
-            .replace("{request_id}", requestId)
-            .replace("{task_id}", requestId)
-
-        if (!decoded.contains("{") && !result.endsWith("/$requestId")) {
-            result = "${result.trimEnd('/')}/$requestId"
-        }
-        return result
-    }
-
-    private fun buildUrl(baseUrl: String, endpoint: String): String =
-        "${baseUrl.trimEnd('/')}/${endpoint.trim('/')}"
-
-    private fun isXai(baseUrl: String): Boolean =
-        baseUrl.contains("api.x.ai", ignoreCase = true)
-
-    private fun validatePrompt(prompt: String): Boolean {
-        if (prompt.isBlank()) {
-            fail("Please enter a prompt first.")
-            return false
-        }
-        return true
-    }
-
-    private fun validateConfiguration(
-        baseUrl: String,
-        endpoint: String,
-        apiKey: String,
-        section: String
-    ): Boolean {
-        if (baseUrl.isBlank() || endpoint.isBlank() || apiKey.isBlank()) {
-            fail("Please configure $section Settings first.")
-            return false
-        }
-        return true
-    }
-
-    private fun completeVideo(url: String) {
-        _uiState.update {
-            it.copy(
-                isGenerating = false,
-                generatedVideoUrl = url,
-                error = null,
-                videoStatus = null
-            )
-        }
-    }
-
-    private fun fail(message: String) {
-        _uiState.update {
-            it.copy(isGenerating = false, error = message.trim(), videoStatus = null)
-        }
-    }
-
-    private fun mediaHttpError(code: Int, body: String, isVideo: Boolean): String {
-        val providerOutput = truncate(body)
-        return when (code) {
-            400 -> "Invalid request. Check model, prompt, and media input.\nProvider output: $providerOutput"
-            401 -> "Invalid API key."
-            402 -> "Provider credit or billing issue."
-            404 -> "Endpoint not found. Check Base URL and Path in Settings."
-            413 -> "Uploaded image is too large. Enable Economy Mode or choose a smaller image."
-            415 -> "Unsupported Media Type. Check Request Format (JSON vs multipart).\nProvider output: $providerOutput"
-            422 -> if (isVideo) {
-                "Video request failed because the image payload was rejected.\nProvider output: $providerOutput"
-            } else {
-                "Image request failed because the payload format was rejected.\nProvider output: $providerOutput"
-            }
-            429 -> "Rate limit exceeded."
-            else -> "Error $code: $providerOutput"
-        }
-    }
-
-    private fun truncate(text: String, limit: Int = 250): String =
-        if (text.length > limit) "${text.take(limit)}..." else text
-
-    private fun JSONObject.toJsonBody(): RequestBody =
-        toString().toRequestBody(JSON_MEDIA_TYPE)
-
-    private fun JSONArray.firstObject(): JSONObject? =
-        if (length() > 0) optJSONObject(0) else null
-
-    private suspend fun loadMediaBytes(url: String): Pair<ByteArray, String>? {
-        if (url.startsWith("data:")) {
-            val metadata = url.substringBefore(',')
-            val mime = metadata.substringAfter("data:", "application/octet-stream")
-                .substringBefore(';')
-            val bytes = Base64.getDecoder().decode(url.substringAfter(','))
-            return bytes to mime
-        }
-
-        val request = Request.Builder().url(url).get().build()
-        return okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val bytes = response.body?.bytes() ?: return null
-            val mime = response.header("Content-Type")
-                ?.substringBefore(';')
-                ?: "application/octet-stream"
-            bytes to mime
-        }
-    }
-
-    private fun extensionForMime(mime: String, isVideo: Boolean): String =
-        when (mime.lowercase()) {
-            "image/jpeg", "image/jpg" -> "jpg"
-            "image/webp" -> "webp"
-            "image/gif" -> "gif"
-            "video/webm" -> "webm"
-            "video/quicktime" -> "mov"
-            else -> if (isVideo) "mp4" else "png"
-        }
-
-    private fun showToast(context: Context, message: String) {
-        viewModelScope.launch(Dispatchers.Main) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
 
     class Factory(
         private val settingsRepository: SettingsRepository,
         private val okHttpClient: OkHttpClient,
-        private val context: Context
+        private val context: android.content.Context
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (!modelClass.isAssignableFrom(StudioViewModel::class.java)) {
-                throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
-            }
             return StudioViewModel(settingsRepository, okHttpClient, context) as T
         }
-    }
-
-    companion object {
-        private const val TAG = "StudioViewModel"
-        private const val MAX_IMAGE_SIDE = 1024
-        private const val MAX_VIDEO_POLL_ATTEMPTS = 60
-        private const val VIDEO_POLL_INTERVAL_MS = 5_000L
-        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-        private val JPEG_MEDIA_TYPE = "image/jpeg".toMediaType()
-        private val IMAGE_MEDIA_TYPE = "image/*".toMediaType()
     }
 }

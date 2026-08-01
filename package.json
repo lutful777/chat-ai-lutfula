@@ -1,9 +1,0 @@
-{
-  "name": "chat-ai-lutfula-api",
-  "description": "Backend API for Chat AI Lutfula",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@honcho-ai/sdk": "^2.0.0"
-  }
-}

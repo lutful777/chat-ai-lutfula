@@ -26,11 +26,6 @@ object SearchDetector {
         val text = messageText.trim()
         val textLower = text.lowercase()
 
-        if (textLower == "#bingx") return Pair("Pengumuman terbaru BingX", "bingx")
-        if (textLower.startsWith("#bingx ")) {
-            val query = text.drop(6).trim()
-            return Pair(query.ifBlank { "Pengumuman terbaru BingX" }, "bingx")
-        }
         if (textLower.startsWith("#berita")) return Pair(text.drop(7).trim(), "berita")
         if (textLower.startsWith("#browser")) return Pair(text.drop(8).trim(), "cari")
         if (textLower.startsWith("#cari")) return Pair(text.drop(5).trim(), "cari")

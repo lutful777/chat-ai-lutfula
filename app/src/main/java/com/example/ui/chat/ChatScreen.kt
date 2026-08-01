@@ -403,6 +403,22 @@ fun ChatScreen(
                             ) {
                                 Icon(Icons.Filled.AttachFile, contentDescription = "Add file or photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier
+                                    .padding(start = 4.dp)
+                                    .background(
+                                        color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else androidx.compose.ui.graphics.Color.Transparent,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable {
+                                        viewModel.setMode(if (uiState.mode == ChatMode.GITHUB) ChatMode.NORMAL else ChatMode.GITHUB)
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("GitHub", color = if (uiState.mode == ChatMode.GITHUB) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
                             DropdownMenu(
                                 expanded = showAttachmentMenu,
                                 onDismissRequest = { showAttachmentMenu = false }
@@ -426,36 +442,6 @@ fun ChatScreen(
                             }
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (uiState.mode == ChatMode.GITHUB) PrimaryNeon.copy(alpha = 0.18f)
-                                    else Color.Transparent
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon else OutlineDark,
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                .clickable {
-                                    viewModel.setMode(
-                                        if (uiState.mode == ChatMode.GITHUB) ChatMode.NORMAL
-                                        else ChatMode.GITHUB
-                                    )
-                                }
-                                .padding(horizontal = 9.dp, vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "GitHub",
-                                color = if (uiState.mode == ChatMode.GITHUB) PrimaryNeon
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
                         BasicTextField(
                             value = inputText,
                             onValueChange = { inputText = it },
@@ -464,11 +450,7 @@ fun ChatScreen(
                             cursorBrush = SolidColor(Color.White),
                             decorationBox = { innerTextField ->
                                 if (inputText.isEmpty()) {
-                                    Text(
-                                        if (uiState.mode == ChatMode.GITHUB) "Ask about GitHub..."
-                                        else "Ask anything...",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Text(if (uiState.mode == ChatMode.GITHUB) "Ask about GitHub..." else "Ask anything...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 innerTextField()
                             },
@@ -613,7 +595,6 @@ fun ChatScreen(
             val modeText = when (currentMode) {
                 ChatMode.THINK -> "Think ▼"
                 ChatMode.THINK_DEEPLY -> "Think Deeply ▼"
-                ChatMode.GITHUB -> "GitHub ▼"
                 else -> "Normal ▼"
             }
 
@@ -657,13 +638,6 @@ fun ChatScreen(
                         onClick = {
                             showModeMenu = false
                             viewModel.setMode(ChatMode.THINK_DEEPLY)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("GitHub", color = Color.White) },
-                        onClick = {
-                            showModeMenu = false
-                            viewModel.setMode(ChatMode.GITHUB)
                         }
                     )
                 }
@@ -751,8 +725,9 @@ fun MainPromptCard(promptText: String) {
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
-            ClickableLinkText(
-                content = promptText,
+            Text(
+                text = promptText,
+                color = Color.White,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
@@ -909,110 +884,16 @@ fun MessageBubble(message: UiMessage) {
 }
 
 
-private val chatLinkRegex = Regex(
-    """\[([^\]]+)]\(((?:https?://|www\.)[^\s)]+)\)|((?:https?://|www\.)[^\s<>\[\]{}]+)""",
-    RegexOption.IGNORE_CASE
-)
-
-private fun buildChatLinkText(content: String, linkColor: Color): AnnotatedString {
-    val builder = AnnotatedString.Builder()
-    var cursor = 0
-
-    chatLinkRegex.findAll(content).forEach { match ->
-        if (match.range.first > cursor) {
-            builder.append(content.substring(cursor, match.range.first))
-        }
-
-        val markdownLabel = match.groups[1]?.value.orEmpty()
-        val markdownTarget = match.groups[2]?.value.orEmpty()
-        val rawTarget = match.groups[3]?.value.orEmpty()
-        val originalTarget = if (markdownTarget.isNotBlank()) markdownTarget else rawTarget
-        val cleanedTarget = if (markdownTarget.isNotBlank()) {
-            originalTarget
-        } else {
-            originalTarget.trimEnd('.', ',', ';', ':', '!', '?')
-        }
-        val trailingText = if (markdownTarget.isBlank()) {
-            originalTarget.substring(cleanedTarget.length)
-        } else {
-            ""
-        }
-        val normalizedTarget = if (cleanedTarget.startsWith("www.", ignoreCase = true)) {
-            "https://$cleanedTarget"
-        } else {
-            cleanedTarget
-        }
-        val visibleText = if (markdownLabel.isNotBlank()) markdownLabel else cleanedTarget
-
-        if (normalizedTarget.startsWith("http://", ignoreCase = true) ||
-            normalizedTarget.startsWith("https://", ignoreCase = true)
-        ) {
-            builder.pushStringAnnotation(tag = "URL", annotation = normalizedTarget)
-            builder.pushStyle(
-                androidx.compose.ui.text.SpanStyle(
-                    color = linkColor,
-                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
-                )
-            )
-            builder.append(visibleText)
-            builder.pop()
-            builder.pop()
-        } else {
-            builder.append(visibleText)
-        }
-
-        builder.append(trailingText)
-        cursor = match.range.last + 1
-    }
-
-    if (cursor < content.length) {
-        builder.append(content.substring(cursor))
-    }
-    return builder.toAnnotatedString()
-}
-
-@Suppress("DEPRECATION")
-@Composable
-private fun ClickableLinkText(
-    content: String,
-    modifier: Modifier = Modifier,
-    style: TextStyle = MaterialTheme.typography.bodyMedium.copy(
-        fontSize = 14.sp,
-        lineHeight = 20.sp
-    ),
-    color: Color = Color.White
-) {
-    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-    val linkColor = Color(0xFFFA0001)
-    val annotatedText = remember(content, linkColor) {
-        buildChatLinkText(content, linkColor)
-    }
-
-    androidx.compose.foundation.text.ClickableText(
-        text = annotatedText,
-        modifier = modifier,
-        style = style.copy(color = color),
-        onClick = { offset ->
-            annotatedText.getStringAnnotations(
-                tag = "URL",
-                start = offset,
-                end = offset
-            ).firstOrNull()?.let { annotation ->
-                val target = annotation.item
-                if (target.startsWith("http://", ignoreCase = true) ||
-                    target.startsWith("https://", ignoreCase = true)
-                ) {
-                    runCatching { uriHandler.openUri(target) }
-                }
-            }
-        }
-    )
-}
-
 @Composable
 fun MessageContent(content: String, isUser: Boolean) {
     if (isUser || !content.contains("```")) {
-        ClickableLinkText(content = content)
+        Text(
+            text = content,
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+            fontSize = 14.sp,
+            lineHeight = 20.sp
+        )
         return
     }
 
@@ -1024,7 +905,13 @@ fun MessageContent(content: String, isUser: Boolean) {
         blocks.forEachIndexed { index, block ->
             if (index % 2 == 0) {
                 if (block.isNotBlank()) {
-                    ClickableLinkText(content = block.trim('\n'))
+                    Text(
+                        text = block.trim('\n'),
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
                 }
             } else {
                 val lines = block.lines()
