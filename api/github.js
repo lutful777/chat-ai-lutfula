@@ -1,6 +1,21 @@
-const OWNER = 'lutful777';
-const REPO = 'chat-ai-lutfula';
-const DEFAULT_REF = 'main';
+const DEFAULT_REPOSITORY = 'lutful777/chat-ai-lutfula';
+const ALLOWED_REPOSITORIES = Object.freeze({
+  'lutful777/chat-ai-lutfula': {
+    owner: 'lutful777',
+    repo: 'chat-ai-lutfula',
+    defaultRef: 'main'
+  },
+  'soprat123/bikin-foto': {
+    owner: 'soprat123',
+    repo: 'bikin-foto',
+    defaultRef: 'main'
+  },
+  'soprat123/qris-dinamis-telegram': {
+    owner: 'soprat123',
+    repo: 'qris-dinamis-telegram',
+    defaultRef: 'main'
+  }
+});
 const GITHUB_API = 'https://api.github.com';
 const MAX_FILE_CHARACTERS = 30000;
 const MAX_TREE_ITEMS = 2000;
@@ -33,9 +48,31 @@ function pathFromQuery(query) {
   return normalizePath(pathLike?.[1] || '');
 }
 
-function selectReadEndpoint(query, requestedPath, ref) {
+function selectRepository(query) {
+  const q = String(query || '').toLowerCase();
+  const explicit = q.match(/\b([a-z0-9_.-]+\/[a-z0-9_.-]+)\b/)?.[1];
+
+  if (explicit && ALLOWED_REPOSITORIES[explicit]) {
+    return { fullName: explicit, ...ALLOWED_REPOSITORIES[explicit] };
+  }
+
+  for (const [fullName, repository] of Object.entries(ALLOWED_REPOSITORIES)) {
+    if (q.includes(repository.repo.toLowerCase())) {
+      return { fullName, ...repository };
+    }
+  }
+
+  return {
+    fullName: DEFAULT_REPOSITORY,
+    ...ALLOWED_REPOSITORIES[DEFAULT_REPOSITORY]
+  };
+}
+
+function selectReadEndpoint(query, requestedPath, ref, repository) {
   const q = String(query || '').toLowerCase();
   const filePath = normalizePath(requestedPath) || pathFromQuery(query);
+  const owner = repository.owner;
+  const repo = repository.repo;
 
   if (
     q.includes('username') ||
@@ -49,7 +86,7 @@ function selectReadEndpoint(query, requestedPath, ref) {
 
   if (filePath) {
     return {
-      endpoint: `/repos/${OWNER}/${REPO}/contents/${encodeContentPath(filePath)}?ref=${encodeURIComponent(ref)}`,
+      endpoint: `/repos/${owner}/${repo}/contents/${encodeContentPath(filePath)}?ref=${encodeURIComponent(ref)}`,
       kind: 'content',
       path: filePath
     };
@@ -63,22 +100,22 @@ function selectReadEndpoint(query, requestedPath, ref) {
     q.includes('tree repo')
   ) {
     return {
-      endpoint: `/repos/${OWNER}/${REPO}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+      endpoint: `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
       kind: 'tree'
     };
   }
 
   if (q.includes('commit')) {
-    return { endpoint: `/repos/${OWNER}/${REPO}/commits`, kind: 'commits' };
+    return { endpoint: `/repos/${owner}/${repo}/commits`, kind: 'commits' };
   }
   if (q.includes('branch') || q.includes('cabang')) {
-    return { endpoint: `/repos/${OWNER}/${REPO}/branches`, kind: 'branches' };
+    return { endpoint: `/repos/${owner}/${repo}/branches`, kind: 'branches' };
   }
   if (q.includes('issue')) {
-    return { endpoint: `/repos/${OWNER}/${REPO}/issues`, kind: 'issues' };
+    return { endpoint: `/repos/${owner}/${repo}/issues`, kind: 'issues' };
   }
   if (q.includes('pull') || /\bpr\b/.test(q)) {
-    return { endpoint: `/repos/${OWNER}/${REPO}/pulls`, kind: 'pulls' };
+    return { endpoint: `/repos/${owner}/${repo}/pulls`, kind: 'pulls' };
   }
   if (
     q.includes('file') ||
@@ -88,12 +125,12 @@ function selectReadEndpoint(query, requestedPath, ref) {
     q.includes('struktur')
   ) {
     return {
-      endpoint: `/repos/${OWNER}/${REPO}/contents?ref=${encodeURIComponent(ref)}`,
+      endpoint: `/repos/${owner}/${repo}/contents?ref=${encodeURIComponent(ref)}`,
       kind: 'contents'
     };
   }
 
-  return { endpoint: `/repos/${OWNER}/${REPO}`, kind: 'repository' };
+  return { endpoint: `/repos/${owner}/${repo}`, kind: 'repository' };
 }
 
 function normalizeGitHubContent(data) {
@@ -209,9 +246,15 @@ export default async function handler(req, res) {
       typeof req.query.path === 'string' ? req.query.path : '';
     const requestedRef =
       typeof req.query.ref === 'string' ? req.query.ref.trim() : '';
-    const ref = requestedRef || DEFAULT_REF;
+    const repository = selectRepository(query);
+    const ref = requestedRef || repository.defaultRef;
 
-    const selection = selectReadEndpoint(query, requestedPath, ref);
+    const selection = selectReadEndpoint(
+      query,
+      requestedPath,
+      ref,
+      repository
+    );
     const targetUrl = GITHUB_API + selection.endpoint;
 
     const response = await fetch(targetUrl, {
@@ -249,7 +292,8 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      repository: `${OWNER}/${REPO}`,
+      repository: repository.fullName,
+      allowedRepositories: Object.keys(ALLOWED_REPOSITORIES),
       readOnly: true,
       tokenEnvironment: 'GITHUB_TOKEN_Soprat123',
       kind: selection.kind,
