@@ -29,7 +29,7 @@ import kotlinx.coroutines.flow.map
 import com.google.mlkit.nl.languageid.LanguageIdentification
 
 enum class ChatMode {
-    NORMAL, THINK, THINK_DEEPLY
+    NORMAL, THINK, THINK_DEEPLY, GITHUB
 }
 
 data class UiMessage(
@@ -500,6 +500,7 @@ class ChatViewModel(
                     ChatMode.NORMAL -> "You are a helpful AI assistant. Provide fast, simple, and direct answers."
                     ChatMode.THINK -> "You are a helpful AI assistant. Approach tasks with careful reasoning and thorough checking. Explain your thought process."
                     ChatMode.THINK_DEEPLY -> "You are a helpful AI assistant. Provide deeper analysis, detailed debugging, and exhaustive step-by-step reasoning. You are better for coding and complex tasks."
+                    ChatMode.GITHUB -> "You are in GitHub mode. Focus on repository code, commits, branches, pull requests, issues, and GitHub workflows. Give precise, practical coding help. Never claim that you opened, changed, committed, pushed, or deployed a repository unless repository data or a successful tool result is actually provided."
                 }
                 
                 if (langPref == "id") {
@@ -684,6 +685,7 @@ class ChatViewModel(
                     when (mode) {
                         ChatMode.THINK -> ReasoningConfig("medium")
                         ChatMode.THINK_DEEPLY -> ReasoningConfig("high")
+                        ChatMode.GITHUB -> ReasoningConfig("medium")
                         ChatMode.NORMAL -> null
                     }
                 } else null
