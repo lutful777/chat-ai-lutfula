@@ -1,5 +1,6 @@
 {
   "name": "chat-ai-lutfula-api",
+  "description": "Backend API for Chat AI Lutfula",
   "private": true,
   "type": "module",
   "dependencies": {
