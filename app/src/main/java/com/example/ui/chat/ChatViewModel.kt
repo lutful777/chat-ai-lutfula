@@ -291,13 +291,13 @@ class ChatViewModel(
 
                 if (activeMode == ChatMode.GITHUB) {
                     _uiState.update { it.copy(isLoading = true, loadingText = "Menghubungkan ke GitHub...") }
-                    val proxySecret = com.example.BuildConfig.GITHUB_PROXY_SECRET
-                    if (proxySecret.isBlank() || proxySecret == "YOUR_GITHUB_PROXY_SECRET") {
+                    val proxySecret = com.example.BuildConfig.APP_GITHUB_PROXY_SECRET
+                    if (proxySecret.isBlank() || proxySecret == "YOUR_APP_GITHUB_PROXY_SECRET") {
                         chatRepository.insertMessage(
                             MessageEntity(
                                 sessionId = sessionId,
                                 role = "assistant",
-                                content = "GITHUB_PROXY_SECRET belum dikonfigurasi pada build APK."
+                                content = "APP_GITHUB_PROXY_SECRET belum dikonfigurasi pada build APK."
                             )
                         )
                         _uiState.update { it.copy(isLoading = false, loadingText = null) }
